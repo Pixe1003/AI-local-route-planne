@@ -17,3 +17,5 @@ class ChatResponse(BaseModel):
     updated_plan: Optional[RefinedPlan]
     assistant_message: str
     requires_confirmation: bool
+    event_type: Optional[str] = None
+    replan_level: Optional[str] = None

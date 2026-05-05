@@ -7,6 +7,8 @@ import { PlanMap } from "../components/PlanMap"
 import { PlanTimeline } from "../components/PlanTimeline"
 import { usePlanStore } from "../store/planStore"
 
+const replanShortcuts = ["少排队", "更省钱", "少走路", "雨天方案", "亲子友好", "老人友好", "压缩到 2 小时"]
+
 export function PlanPage() {
   const navigate = useNavigate()
   const { plans, activePlanId, switchPlan, sendAdjustment, loading, chatHistory } = usePlanStore()
@@ -61,9 +63,20 @@ export function PlanPage() {
           <span>估算花费</span>
         </div>
         <div>
-          <strong>{activePlan.summary.poi_count} 站</strong>
-          <span>路线密度</span>
+          <strong>{activePlan.summary.total_queue_min} 分钟</strong>
+          <span>排队风险</span>
         </div>
+        <div>
+          <strong>{activePlan.summary.validation.is_valid ? "已通过" : "需修复"}</strong>
+          <span>约束校验</span>
+        </div>
+      </section>
+      <section className="replan-panel">
+        {replanShortcuts.map(shortcut => (
+          <button className="secondary-button" disabled={loading} key={shortcut} onClick={() => sendAdjustment(shortcut)} type="button">
+            {shortcut}
+          </button>
+        ))}
       </section>
       <form className="chat-box" onSubmit={submit}>
         <div className="chat-history">

@@ -11,6 +11,9 @@ class Settings(BaseSettings):
     llm_provider: str = "deepseek"
     llm_api_key: str = ""
     llm_model: str = "deepseek-chat"
+    llm_base_url: str = ""
+    llm_auth_header: str = ""
+    llm_timeout_seconds: int = 20
     database_url: str = "postgresql://local_route:local_route@localhost:5432/local_route"
     vector_db_path: str = "./data/chroma"
     amap_key: str = ""

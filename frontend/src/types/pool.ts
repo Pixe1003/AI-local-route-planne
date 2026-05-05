@@ -1,3 +1,5 @@
+import type { UserNeedProfile } from "./onboarding"
+
 export interface TimeWindow {
   start: string
   end: string
@@ -13,6 +15,7 @@ export interface PoolRequest {
   party?: string
   budget_per_person?: number
   free_text?: string
+  need_profile?: UserNeedProfile
 }
 
 export interface PoiInPool {
@@ -28,6 +31,7 @@ export interface PoiInPool {
   keywords: string[]
   estimated_queue_min?: number | null
   suitable_score: number
+  score_breakdown: Record<string, number>
 }
 
 export interface PoolCategory {

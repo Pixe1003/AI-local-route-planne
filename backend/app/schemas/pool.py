@@ -3,6 +3,8 @@ from typing import Optional
 
 from pydantic import BaseModel, Field, field_validator
 
+from app.schemas.onboarding import UserNeedProfile
+
 
 class TimeWindow(BaseModel):
     start: str
@@ -23,13 +25,14 @@ class TimeWindow(BaseModel):
 class PoolRequest(BaseModel):
     user_id: str
     city: str
-    date: str
-    time_window: TimeWindow
+    date: str = "2026-05-02"
+    time_window: TimeWindow = Field(default_factory=lambda: TimeWindow(start="13:00", end="21:00"))
     persona_tags: list[str] = Field(default_factory=list)
     pace_style: Optional[str] = None
     party: Optional[str] = None
     budget_per_person: Optional[int] = None
     free_text: Optional[str] = None
+    need_profile: Optional[UserNeedProfile] = None
 
 
 class PoiInPool(BaseModel):
@@ -45,6 +48,7 @@ class PoiInPool(BaseModel):
     keywords: list[str]
     estimated_queue_min: Optional[int]
     suitable_score: float
+    score_breakdown: dict[str, float] = Field(default_factory=dict)
 
 
 class PoolCategory(BaseModel):

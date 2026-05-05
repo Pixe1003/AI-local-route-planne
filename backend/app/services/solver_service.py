@@ -1,5 +1,7 @@
 from app.repositories.poi_repo import get_poi_repository
+from app.schemas.onboarding import UserNeedProfile
 from app.schemas.plan import RouteMetrics, RouteSkeleton, RouteStop, StructuredIntent
+from app.services.route_repairer import RouteRepairer
 from app.solver.distance import estimate_transport, haversine_meters
 from app.solver.styles import PLAN_STYLES
 from app.utils.time_utils import add_minutes, minutes_between
@@ -9,9 +11,25 @@ class SolverService:
     def __init__(self) -> None:
         self.repo = get_poi_repository()
 
-    def solve(self, intent: StructuredIntent, candidate_poi_ids: list[str]) -> list[RouteSkeleton]:
+    def solve(
+        self,
+        intent: StructuredIntent,
+        candidate_poi_ids: list[str],
+        *,
+        context=None,
+        profile: UserNeedProfile | None = None,
+    ) -> list[RouteSkeleton]:
         ids = self._ensure_minimum_candidates(candidate_poi_ids)
-        return [self._solve_style(intent, ids, style) for style in PLAN_STYLES]
+        repairer = RouteRepairer()
+        return [
+            repairer.repair(
+                self._solve_style(intent, ids, style),
+                intent,
+                context=context,
+                profile=profile,
+            )
+            for style in PLAN_STYLES
+        ]
 
     def _ensure_minimum_candidates(self, candidate_poi_ids: list[str]) -> list[str]:
         ids = list(dict.fromkeys(candidate_poi_ids))
@@ -43,7 +61,7 @@ class SolverService:
         total_distance = 0
         queue_total = 0
         for index, poi in enumerate(route_pois):
-            queue = poi.queue_estimate["weekend_peak"] if intent.soft_preferences.avoid_queue else max(5, poi.queue_estimate["weekend_peak"] // 2)
+            queue = poi.queue_estimate["weekend_peak"]
             duration = poi.visit_duration + min(queue, 30)
             arrival = current_time
             departure = add_minutes(arrival, duration)
