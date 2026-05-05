@@ -35,6 +35,13 @@ export function PlanTimeline({ plan, onStopClick }: PlanTimelineProps) {
           </button>
           {expanded === stop.poi_id ? (
             <div className="evidence-panel">
+              {stop.score_breakdown ? (
+                <div className="score-row">
+                  <span>评分 {Math.round(stop.score_breakdown.total ?? 0)}</span>
+                  <span>兴趣 {Math.round(stop.score_breakdown.user_interest ?? 0)}</span>
+                  <span>UGC {Math.round(stop.score_breakdown.ugc_match ?? 0)}</span>
+                </div>
+              ) : null}
               {stop.ugc_evidence.map(item => (
                 <p key={`${item.source}-${item.quote}`}>“{item.quote}” · {item.source}</p>
               ))}

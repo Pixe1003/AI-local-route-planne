@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 from app.repositories.poi_repo import get_poi_repository
 from app.schemas.chat import ChatResponse, ChatTurn
 from app.schemas.plan import RefinedPlan, RefinedStop, UgcSnippet
+from app.services.route_replanner import ReplanEvent, RouteReplanner
 from app.services.state import PLAN_REGISTRY
 from app.services.ugc_service import UgcService
 
@@ -26,43 +27,48 @@ class ChatService:
                 assistant_message="没有找到当前方案，请先重新生成路线。",
                 requires_confirmation=False,
             )
-        intent_type = self._detect_intent(user_message)
-        updated = plan.model_copy(deep=True)
-        if intent_type == "replace_poi":
-            updated = self._replace_stop(updated, user_message)
-            message = "已帮你把目标站点换成排队压力更低的选择。"
-        elif intent_type == "add_poi":
-            updated = self._add_cafe(updated)
-            message = "已在路线中加入一个咖啡休息点，并保留原有主线。"
-        elif intent_type == "remove_poi":
-            updated.stops = updated.stops[:-1] if len(updated.stops) > 3 else updated.stops
-            updated.summary.poi_count = len(updated.stops)
-            message = "已压缩路线，保留最关键的站点。"
-        elif intent_type == "compress_time":
-            updated.stops = updated.stops[: max(3, len(updated.stops) - 1)]
-            updated.summary.poi_count = len(updated.stops)
-            updated.summary.total_duration_min = max(120, updated.summary.total_duration_min - 60)
-            message = "已缩短路线，优先保留高匹配站点。"
-        else:
-            message = "我先按当前方案保留，如果要换站点可以说“把第二站换成不排队的”。"
+        intent_type, event_type = self._detect_intent(user_message)
+        if event_type == "USER_ASK_WHY":
+            return ChatResponse(
+                intent_type=intent_type,
+                updated_plan=plan,
+                assistant_message="这条路线的推荐理由来自每站评分依据、UGC 高频关键词和约束校验结果。",
+                requires_confirmation=False,
+                event_type=event_type,
+                replan_level=None,
+            )
+        response = RouteReplanner().replan(
+            plan,
+            ReplanEvent(event_type=event_type, message=user_message),
+        )
+        updated = response.plan
+        message = response.assistant_message
         PLAN_REGISTRY[updated.plan_id] = updated
         return ChatResponse(
             intent_type=intent_type,
             updated_plan=updated,
             assistant_message=message,
             requires_confirmation=False,
+            event_type=event_type,
+            replan_level=response.replan_level,
         )
 
-    def _detect_intent(self, message: str) -> str:
-        if "换" in message or "替换" in message:
-            return "replace_poi"
+    def _detect_intent(self, message: str) -> tuple[str, str]:
+        if "为什么" in message or "原因" in message:
+            return "ask_why", "USER_ASK_WHY"
+        if "下雨" in message or "雨天" in message:
+            return "weather_replan", "WEATHER_CHANGED"
+        if "省钱" in message or "预算" in message or "便宜" in message:
+            return "budget_replan", "BUDGET_EXCEEDED"
+        if "快" in message or "压缩" in message or "赶" in message or "只剩" in message:
+            return "compress_time", "TIME_DELAYED"
         if "加" in message or "增加" in message:
-            return "add_poi"
+            return "add_poi", "USER_MODIFY_CONSTRAINT"
         if "删" in message or "跳过" in message:
-            return "remove_poi"
-        if "快" in message or "压缩" in message or "赶" in message:
-            return "compress_time"
-        return "unknown"
+            return "compress_time", "TIME_DELAYED"
+        if "换" in message or "替换" in message or "排队" in message:
+            return "replace_poi", "USER_REJECT_POI"
+        return "unknown", "USER_MODIFY_CONSTRAINT"
 
     def _replace_stop(self, plan: RefinedPlan, message: str) -> RefinedPlan:
         index = 1 if ("第二" in message or "2" in message) and len(plan.stops) > 1 else 0

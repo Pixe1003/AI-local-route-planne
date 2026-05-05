@@ -4,11 +4,13 @@ import { useNavigate } from "react-router-dom"
 import { PoolGrid } from "../components/PoolGrid"
 import { usePlanStore } from "../store/planStore"
 import { usePoolStore } from "../store/poolStore"
+import { useUserStore } from "../store/userStore"
 
 export function PoolPage() {
   const navigate = useNavigate()
   const { pool, selectedIds, loading, error } = usePoolStore()
   const { generatePlans, loading: planLoading } = usePlanStore()
+  const { needProfile } = useUserStore()
 
   if (!pool) {
     return (
@@ -25,14 +27,17 @@ export function PoolPage() {
     await generatePlans({
       pool_id: pool.pool_id,
       selected_poi_ids: Array.from(selectedIds),
-      free_text: "希望适合情侣拍照，晚上吃饭",
-      context: {
-        city: "shanghai",
-        date: "2026-05-02",
-        time_window: { start: "13:00", end: "21:00" },
-        party: "couple",
-        budget_per_person: 300
-      }
+      free_text: needProfile?.raw_query ?? "希望适合情侣拍照，晚上吃饭",
+      need_profile: needProfile ?? undefined,
+      context: needProfile
+        ? undefined
+        : {
+            city: "shanghai",
+            date: "2026-05-02",
+            time_window: { start: "13:00", end: "21:00" },
+            party: "couple",
+            budget_per_person: 300
+          }
     })
     navigate("/plan")
   }

@@ -2,6 +2,7 @@ from typing import Optional
 
 from pydantic import BaseModel, Field
 
+from app.schemas.onboarding import UserNeedProfile
 from app.schemas.pool import TimeWindow
 
 
@@ -59,6 +60,32 @@ class RouteMetrics(BaseModel):
     queue_total_min: int
 
 
+class ScoreBreakdown(BaseModel):
+    user_interest: float = 0.0
+    poi_quality: float = 0.0
+    context_fit: float = 0.0
+    ugc_match: float = 0.0
+    service_closure: float = 0.0
+    queue_penalty: float = 0.0
+    price_penalty: float = 0.0
+    distance_penalty: float = 0.0
+    risk_penalty: float = 0.0
+    total: float = 0.0
+
+
+class ValidationIssue(BaseModel):
+    code: str
+    message: str
+    severity: str = "error"
+    target: Optional[str] = None
+
+
+class ValidationResult(BaseModel):
+    is_valid: bool
+    issues: list[ValidationIssue] = Field(default_factory=list)
+    repaired_count: int = 0
+
+
 class RouteSkeleton(BaseModel):
     style: str
     stops: list[RouteStop]
@@ -85,6 +112,9 @@ class RefinedStop(BaseModel):
     latitude: float
     longitude: float
     category: str
+    score_breakdown: dict[str, float] = Field(default_factory=dict)
+    estimated_queue_min: Optional[int] = None
+    estimated_cost: Optional[int] = None
 
 
 class DroppedPoi(BaseModel):
@@ -100,6 +130,9 @@ class PlanSummary(BaseModel):
     style_highlights: list[str]
     tradeoffs: list[str]
     dropped_pois: list[DroppedPoi]
+    total_queue_min: int = 0
+    walking_distance_meters: int = 0
+    validation: ValidationResult = Field(default_factory=lambda: ValidationResult(is_valid=True))
 
 
 class RefinedPlan(BaseModel):
@@ -113,9 +146,10 @@ class RefinedPlan(BaseModel):
 
 class PlanRequest(BaseModel):
     pool_id: str
-    selected_poi_ids: list[str]
+    selected_poi_ids: list[str] = Field(default_factory=list)
     free_text: Optional[str] = None
-    context: PlanContext
+    context: Optional[PlanContext] = None
+    need_profile: Optional[UserNeedProfile] = None
 
 
 class PlanResponse(BaseModel):

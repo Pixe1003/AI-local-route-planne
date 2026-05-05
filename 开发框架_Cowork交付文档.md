@@ -97,7 +97,7 @@ HTTP:       axios
 ```bash
 # LLM 配置
 LLM_PROVIDER=anthropic          # anthropic | openai | qwen
-LLM_API_KEY=sk-xxx
+LLM_API_KEY=<your-provider-api-key>
 LLM_MODEL=claude-opus-4-7
 
 # 数据库

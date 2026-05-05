@@ -11,4 +11,6 @@ export interface ChatResponse {
   updated_plan?: RefinedPlan | null
   assistant_message: string
   requires_confirmation: boolean
+  event_type?: string | null
+  replan_level?: string | null
 }

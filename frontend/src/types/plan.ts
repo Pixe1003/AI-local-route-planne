@@ -1,4 +1,5 @@
 import type { TimeWindow } from "./pool"
+import type { UserNeedProfile } from "./onboarding"
 
 export interface PlanContext {
   city: string
@@ -12,7 +13,8 @@ export interface PlanRequest {
   pool_id: string
   selected_poi_ids: string[]
   free_text?: string
-  context: PlanContext
+  context?: PlanContext
+  need_profile?: UserNeedProfile
 }
 
 export interface Transport {
@@ -39,6 +41,9 @@ export interface RefinedStop {
   latitude: number
   longitude: number
   category: string
+  score_breakdown: Record<string, number>
+  estimated_queue_min?: number | null
+  estimated_cost?: number | null
 }
 
 export interface DroppedPoi {
@@ -54,6 +59,13 @@ export interface PlanSummary {
   style_highlights: string[]
   tradeoffs: string[]
   dropped_pois: DroppedPoi[]
+  total_queue_min: number
+  walking_distance_meters: number
+  validation: {
+    is_valid: boolean
+    issues: Array<{ code: string; message: string; severity: string; target?: string | null }>
+    repaired_count: number
+  }
 }
 
 export interface RefinedPlan {
