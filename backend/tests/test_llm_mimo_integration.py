@@ -59,8 +59,9 @@ def test_llm_client_posts_mimo_openai_compatible_request(monkeypatch):
 
 
 def test_onboarding_profile_uses_llm_profile_when_available(monkeypatch):
-    def fake_complete_json(self, prompt, fallback):
+    def fake_complete_json(self, prompt, fallback, *, agent_name=None, system_prompt=None):
         assert "UserNeedProfile" in prompt
+        assert agent_name == "need_profile"
         return {
             "destination": {"city": "shanghai", "start_location": "静安寺"},
             "time": {"start_time": "15:00", "end_time": "19:00", "time_budget_minutes": 240},
@@ -86,8 +87,9 @@ def test_onboarding_profile_uses_llm_profile_when_available(monkeypatch):
 
 
 def test_intent_uses_llm_soft_preferences_without_overriding_hard_constraints(monkeypatch):
-    def fake_complete_json(self, prompt, fallback):
+    def fake_complete_json(self, prompt, fallback, *, agent_name=None, system_prompt=None):
         assert "StructuredIntent" in prompt
+        assert agent_name == "route_planning"
         return {
             "hard_constraints": {
                 "start_time": "09:00",

@@ -5,15 +5,32 @@ from typing import Any
 import httpx
 
 from app.config import get_settings
+from app.services.agent_skill_registry import get_agent_skill_registry
 
 
 class LlmClient:
     """OpenAI-compatible JSON boundary with deterministic fallback for demos."""
 
-    def complete_json(self, prompt: str, fallback: dict[str, Any]) -> dict[str, Any]:
+    BASE_SYSTEM_PROMPT = (
+        "你是本地路线规划系统的需求理解模块。只输出一个合法 JSON 对象，"
+        "不要输出 Markdown、解释或路线安排。"
+    )
+
+    def complete_json(
+        self,
+        prompt: str,
+        fallback: dict[str, Any],
+        *,
+        agent_name: str | None = None,
+        system_prompt: str | None = None,
+    ) -> dict[str, Any]:
         settings = get_settings()
         if not settings.llm_api_key:
             return fallback
+        system_content = get_agent_skill_registry().build_system_prompt(
+            agent_name,
+            system_prompt or self.BASE_SYSTEM_PROMPT,
+        )
         try:
             response = httpx.post(
                 f"{self._base_url(settings).rstrip('/')}/chat/completions",
@@ -23,10 +40,7 @@ class LlmClient:
                     "messages": [
                         {
                             "role": "system",
-                            "content": (
-                                "你是本地路线规划系统的需求理解模块。只输出一个合法 JSON 对象，"
-                                "不要输出 Markdown、解释或路线安排。"
-                            ),
+                            "content": system_content,
                         },
                         {"role": "user", "content": prompt},
                     ],

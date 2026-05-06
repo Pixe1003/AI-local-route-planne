@@ -1,0 +1,4 @@
+interface:
+  display_name: "Need Profile Agent"
+  short_description: "Need profiling and onboarding rules for AIroute"
+  default_prompt: "Use $need-profile-agent to design or review AIroute onboarding and user need profiling changes."

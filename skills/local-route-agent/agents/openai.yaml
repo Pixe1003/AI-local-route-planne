@@ -1,0 +1,4 @@
+interface:
+  display_name: "Local Route Agent"
+  short_description: "AIroute 本地路线规划 Agent 开发和评审准则"
+  default_prompt: "Use $local-route-agent to design, implement, or review AIroute route-planning agent changes."

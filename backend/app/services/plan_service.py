@@ -14,6 +14,7 @@ from app.schemas.plan import (
     StructuredIntent,
 )
 from app.services.intent_service import IntentService
+from app.services.agent_skill_registry import get_agent_skill_registry
 from app.services.poi_scoring_service import PoiScoringService
 from app.services.route_validator import RouteValidator
 from app.services.solver_service import SolverService
@@ -31,6 +32,7 @@ from app.solver.styles import STYLE_DESCRIPTIONS, STYLE_TITLES
 
 class PlanService:
     def __init__(self) -> None:
+        self.agent_skill = get_agent_skill_registry().get_skill("route_planning")
         self.repo = get_poi_repository()
         self.ugc_service = UgcService()
         self.intent_service = IntentService()

@@ -2,10 +2,14 @@ from datetime import datetime, timezone
 from uuid import uuid4
 
 from app.schemas.trip import RouteVersion, SaveRouteVersionRequest, TripRecord, TripSummary
+from app.services.agent_skill_registry import get_agent_skill_registry
 from app.services.state import TRIP_REGISTRY
 
 
 class TripService:
+    def __init__(self) -> None:
+        self.agent_skill = get_agent_skill_registry().get_skill("trip_manager")
+
     def list_trips(self, user_id: str) -> list[TripSummary]:
         summaries = [
             trip.summary for trip in TRIP_REGISTRY.values() if trip.user_id == user_id
