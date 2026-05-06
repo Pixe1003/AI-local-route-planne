@@ -4,6 +4,7 @@ from uuid import uuid4
 from app.repositories.poi_repo import get_poi_repository
 from app.repositories.vector_repo import VectorRepository
 from app.schemas.pool import PoiInPool, PoolCategory, PoolMeta, PoolRequest, PoolResponse
+from app.services.agent_skill_registry import get_agent_skill_registry
 from app.services.poi_scoring_service import PoiScoringService
 from app.services.state import POOL_REGISTRY
 
@@ -21,6 +22,7 @@ class PoolService:
     }
 
     def __init__(self) -> None:
+        self.agent_skill = get_agent_skill_registry().get_skill("recommend")
         self.repo = get_poi_repository()
         self.vector_repo = VectorRepository()
         self.poi_scorer = PoiScoringService()

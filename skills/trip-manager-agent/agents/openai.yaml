@@ -1,0 +1,4 @@
+interface:
+  display_name: "Trip Manager Agent"
+  short_description: "Trip history and route version rules for AIroute"
+  default_prompt: "Use $trip-manager-agent to design or review AIroute trip persistence and route version changes."

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Route Planning Agent"
+  short_description: "Itinerary optimization and validation rules for AIroute"
+  default_prompt: "Use $route-planning-agent to design or review AIroute itinerary optimization and validation changes."

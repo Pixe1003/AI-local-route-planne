@@ -1,0 +1,4 @@
+interface:
+  display_name: "Recommend Agent"
+  short_description: "Candidate pool and UGC evidence rules for AIroute"
+  default_prompt: "Use $recommend-agent to design or review AIroute POI candidate pool and UGC evidence changes."

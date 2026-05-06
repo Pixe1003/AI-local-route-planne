@@ -2,9 +2,13 @@ from pydantic import ValidationError
 
 from app.llm.client import LlmClient
 from app.schemas.plan import HardConstraints, PlanContext, SoftPreferences, StructuredIntent
+from app.services.agent_skill_registry import get_agent_skill_registry
 
 
 class IntentService:
+    def __init__(self) -> None:
+        self.agent_skill = get_agent_skill_registry().get_skill("route_planning")
+
     def parse_intent(
         self,
         user_id: str,
@@ -71,7 +75,11 @@ selected_poi_ids={selected_poi_ids}
 
 用户输入：{text}
 """
-        llm_data = LlmClient().complete_json(prompt, fallback.model_dump())
+        llm_data = LlmClient().complete_json(
+            prompt,
+            fallback.model_dump(),
+            agent_name="route_planning",
+        )
         try:
             merged = fallback.model_dump()
             if isinstance(llm_data.get("soft_preferences"), dict):

@@ -13,6 +13,7 @@ from app.schemas.onboarding import (
     TimeProfile,
     UserNeedProfile,
 )
+from app.services.agent_skill_registry import get_agent_skill_registry
 
 
 class OnboardingService:
@@ -23,6 +24,9 @@ class OnboardingService:
         "budget_per_person": "人均预算大概是多少？",
         "preference": "更想吃什么或玩什么？",
     }
+
+    def __init__(self) -> None:
+        self.agent_skill = get_agent_skill_registry().get_skill("need_profile")
 
     def analyze(self, request: OnboardingAnalyzeRequest) -> OnboardingAnalyzeResponse:
         profile = self._profile_from_text(request.query, request.user_id)
@@ -77,7 +81,11 @@ UserNeedProfile 字段：
 
 用户输入：{text}
 """
-        llm_data = LlmClient().complete_json(prompt, fallback.model_dump())
+        llm_data = LlmClient().complete_json(
+            prompt,
+            fallback.model_dump(),
+            agent_name="need_profile",
+        )
         try:
             merged = self._deep_merge(fallback.model_dump(), llm_data)
             merged["user_id"] = fallback.user_id
