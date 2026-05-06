@@ -8,7 +8,7 @@ interface PoolStore {
   selectedIds: Set<string>
   loading: boolean
   error: string | null
-  fetchPool: (request: PoolRequest) => Promise<void>
+  fetchPool: (request: PoolRequest) => Promise<PoolResponse | null>
   toggleSelection: (poiId: string) => void
   clearSelection: () => void
 }
@@ -23,11 +23,13 @@ export const usePoolStore = create<PoolStore>((set, get) => ({
     try {
       const pool = await generatePool(request)
       set({ pool, selectedIds: new Set(pool.default_selected_ids), loading: false })
+      return pool
     } catch (error) {
       set({
         loading: false,
         error: error instanceof Error ? error.message : "推荐池生成失败"
       })
+      return null
     }
   },
   toggleSelection: poiId => {

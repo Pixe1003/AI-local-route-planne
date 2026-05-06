@@ -5,6 +5,7 @@ from pydantic import BaseModel, Field
 from app.schemas.onboarding import UserNeedProfile
 from app.schemas.plan import PlanContext, RefinedPlan, ValidationResult
 from app.schemas.pool import PoolResponse
+from app.schemas.trip import TripRecord
 
 
 class AgentRunState(BaseModel):
@@ -32,6 +33,7 @@ PLAN_REGISTRY: dict[str, RefinedPlan] = {}
 PLAN_CONTEXT_REGISTRY: dict[str, PlanContext] = {}
 PLAN_PROFILE_REGISTRY: dict[str, UserNeedProfile] = {}
 RUN_STATE_REGISTRY: dict[str, AgentRunState] = {}
+TRIP_REGISTRY: dict[str, TripRecord] = {}
 
 
 def register_run_state(state: AgentRunState) -> AgentRunState:

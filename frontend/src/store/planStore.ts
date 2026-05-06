@@ -3,7 +3,7 @@ import { create } from "zustand"
 import { adjustPlan } from "../api/chat"
 import { generatePlans } from "../api/plan"
 import type { ChatResponse, ChatTurn } from "../types/chat"
-import type { PlanRequest, RefinedPlan } from "../types/plan"
+import type { PlanRequest, PlanResponse, RefinedPlan } from "../types/plan"
 
 interface PlanStore {
   plans: RefinedPlan[]
@@ -11,10 +11,11 @@ interface PlanStore {
   loading: boolean
   error: string | null
   chatHistory: ChatTurn[]
-  generatePlans: (params: PlanRequest) => Promise<void>
+  generatePlans: (params: PlanRequest) => Promise<PlanResponse | null>
   switchPlan: (planId: string) => void
+  setPlansFromVersion: (plans: RefinedPlan[], activePlanId?: string | null) => void
   applyAdjustment: (response: ChatResponse) => void
-  sendAdjustment: (message: string) => Promise<void>
+  sendAdjustment: (message: string) => Promise<ChatResponse | null>
 }
 
 export const usePlanStore = create<PlanStore>((set, get) => ({
@@ -32,14 +33,23 @@ export const usePlanStore = create<PlanStore>((set, get) => ({
         activePlanId: response.plans[0]?.plan_id ?? null,
         loading: false
       })
+      return response
     } catch (error) {
       set({
         loading: false,
         error: error instanceof Error ? error.message : "方案生成失败"
       })
+      return null
     }
   },
   switchPlan: planId => set({ activePlanId: planId }),
+  setPlansFromVersion: (plans, activePlanId) =>
+    set({
+      plans,
+      activePlanId: activePlanId ?? plans[0]?.plan_id ?? null,
+      chatHistory: [],
+      error: null
+    }),
   applyAdjustment: response => {
     if (!response.updated_plan) return
     const plans = get().plans.map(plan =>
@@ -60,7 +70,7 @@ export const usePlanStore = create<PlanStore>((set, get) => ({
   },
   sendAdjustment: async message => {
     const activePlanId = get().activePlanId
-    if (!activePlanId) return
+    if (!activePlanId) return null
     const userTurn: ChatTurn = {
       role: "user",
       content: message,
@@ -75,11 +85,13 @@ export const usePlanStore = create<PlanStore>((set, get) => ({
       })
       get().applyAdjustment(response)
       set({ loading: false })
+      return response
     } catch (error) {
       set({
         loading: false,
         error: error instanceof Error ? error.message : "调整失败"
       })
+      return null
     }
   }
 }))
