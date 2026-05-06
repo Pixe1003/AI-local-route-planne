@@ -1,7 +1,15 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import routes_chat, routes_meta, routes_onboarding, routes_plan, routes_pool, routes_replan
+from app.api import (
+    routes_chat,
+    routes_meta,
+    routes_onboarding,
+    routes_plan,
+    routes_pool,
+    routes_replan,
+    routes_trips,
+)
 from app.config import get_settings
 
 settings = get_settings()
@@ -22,6 +30,7 @@ app.include_router(routes_chat.router, prefix="/api")
 app.include_router(routes_meta.router, prefix="/api")
 app.include_router(routes_onboarding.router, prefix="/api")
 app.include_router(routes_replan.router, prefix="/api")
+app.include_router(routes_trips.router, prefix="/api")
 
 
 @app.get("/health")

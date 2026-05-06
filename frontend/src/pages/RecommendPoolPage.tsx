@@ -1,0 +1,87 @@
+import { ArrowLeft, Route } from "lucide-react"
+import { useNavigate } from "react-router-dom"
+
+import { PoolGrid } from "../components/PoolGrid"
+import { usePlanStore } from "../store/planStore"
+import { usePoolStore } from "../store/poolStore"
+import { useTripStore } from "../store/tripStore"
+import { useUserStore } from "../store/userStore"
+import { planningContextFromProfile } from "../utils/planning"
+
+export function RecommendPoolPage() {
+  const navigate = useNavigate()
+  const { pool, selectedIds, loading, error } = usePoolStore()
+  const { generatePlans, loading: planLoading } = usePlanStore()
+  const { saveVersion, loading: tripLoading, error: tripError } = useTripStore()
+  const { userId, needProfile } = useUserStore()
+
+  if (!pool) {
+    return (
+      <main className="workspace empty-state">
+        <h1>还没有推荐池</h1>
+        <button className="secondary-button" onClick={() => navigate("/trips/new")} type="button">
+          <ArrowLeft size={18} /> 返回新建行程
+        </button>
+      </main>
+    )
+  }
+
+  const submit = async () => {
+    const planResponse = await generatePlans({
+      pool_id: pool.pool_id,
+      selected_poi_ids: Array.from(selectedIds),
+      free_text: needProfile?.raw_query ?? "希望适合情侣拍照，晚上吃饭",
+      need_profile: needProfile ?? undefined,
+      context: needProfile
+        ? undefined
+        : {
+            city: "shanghai",
+            date: "2026-05-02",
+            time_window: { start: "13:00", end: "21:00" },
+            party: "couple",
+            budget_per_person: 300
+          }
+    })
+    if (!planResponse?.plans.length || !needProfile) return
+    const trip = await saveVersion({
+      user_id: userId,
+      profile: needProfile,
+      planning_context: planningContextFromProfile(needProfile),
+      plans: planResponse.plans,
+      active_plan_id: planResponse.plans[0].plan_id,
+      pool_id: pool.pool_id,
+      selected_poi_ids: Array.from(selectedIds),
+      source: "initial_plan"
+    })
+    if (trip) navigate(`/trips/${trip.trip_id}/plan`)
+  }
+
+  return (
+    <main className="workspace">
+      <div className="topbar">
+        <button className="icon-button" onClick={() => navigate("/trips/new")} title="返回" type="button">
+          <ArrowLeft size={18} />
+        </button>
+        <div>
+          <h1>推荐池</h1>
+          <p>{pool.meta.user_persona_summary}</p>
+        </div>
+        <button
+          className="primary-button compact mobile-action-bar"
+          disabled={loading || planLoading || tripLoading || selectedIds.size < 3}
+          onClick={submit}
+          type="button"
+        >
+          <Route size={18} />
+          {planLoading || tripLoading ? "生成中" : "生成并保存方案"}
+        </button>
+      </div>
+      {error || tripError ? <p className="error-text">{error ?? tripError}</p> : null}
+      <PoolGrid
+        onSelectionChange={ids => usePoolStore.setState({ selectedIds: ids })}
+        pool={pool}
+        selectedIds={selectedIds}
+      />
+    </main>
+  )
+}

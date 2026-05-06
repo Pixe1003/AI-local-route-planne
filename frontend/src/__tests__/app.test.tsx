@@ -4,12 +4,11 @@ import { describe, expect, it } from "vitest";
 import App from "../App";
 
 describe("App", () => {
-  it("renders onboarding-first route planning workspace", () => {
+  it("renders the trip-first workspace shell", () => {
     render(<App />);
 
-    expect(screen.getByRole("heading", { name: "今天想怎么玩？" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "分析缺失信息" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "生成推荐池" })).toBeInTheDocument();
-    expect(screen.getByText("本次路线需求")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "我的行程" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "新建行程" })).toBeInTheDocument();
+    expect(screen.getByText(/Trip Manager Agent/)).toBeInTheDocument();
   });
 });
