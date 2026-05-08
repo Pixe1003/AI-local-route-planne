@@ -1,4 +1,4 @@
-import { ArrowLeft, Send, Save } from "lucide-react"
+import { ArrowLeft, RefreshCw, Send, Save } from "lucide-react"
 import { FormEvent, useEffect, useMemo, useState } from "react"
 import { useNavigate, useParams } from "react-router-dom"
 
@@ -7,6 +7,7 @@ import { PlanMap } from "../components/PlanMap"
 import { PlanTimeline } from "../components/PlanTimeline"
 import { usePlanStore } from "../store/planStore"
 import { useTripStore } from "../store/tripStore"
+import type { AlternativePoi } from "../types/plan"
 
 const replanShortcuts = ["少排队", "更省钱", "少走路", "雨天方案", "亲子友好", "老人友好", "压缩到 2 小时"]
 
@@ -18,6 +19,7 @@ export function PlanResultPage() {
     activePlanId,
     switchPlan,
     sendAdjustment,
+    replaceWithAlternative,
     setPlansFromVersion,
     loading,
     chatHistory
@@ -82,6 +84,24 @@ export function PlanResultPage() {
     setMessage("")
   }
 
+  const replaceCandidate = async (candidate: AlternativePoi) => {
+    const response = await replaceWithAlternative(candidate)
+    if (!response?.updated_plan || !currentTrip) return
+    const latest = usePlanStore.getState()
+    await saveVersion({
+      trip_id: currentTrip.trip_id,
+      user_id: currentTrip.user_id,
+      profile: currentTrip.profile,
+      planning_context: currentTrip.planning_context,
+      plans: latest.plans,
+      active_plan_id: latest.activePlanId ?? response.updated_plan.plan_id,
+      pool_id: currentTrip.versions.at(-1)?.pool_id,
+      selected_poi_ids: latest.plans[0]?.stops.map(stop => stop.poi_id) ?? [],
+      source: "alternative_replace",
+      user_message: `替换为 ${candidate.poi_name}`
+    })
+  }
+
   return (
     <main className="workspace plan-workspace">
       <div className="topbar">
@@ -128,6 +148,38 @@ export function PlanResultPage() {
           <span>约束校验</span>
         </div>
       </section>
+      {(activePlan.alternative_pois ?? []).length ? (
+        <section className="alternatives-panel">
+          <div className="section-heading">
+            <h2>可替换 POI</h2>
+            <p>这些点没有强塞进主路线，适合按现场排队、预算或心情随时替换。</p>
+          </div>
+          <div className="alternative-grid">
+            {(activePlan.alternative_pois ?? []).slice(0, 6).map(candidate => (
+              <article className="alternative-card" key={candidate.poi_id}>
+                <div>
+                  <strong>{candidate.poi_name}</strong>
+                  <span>{candidate.category} · 排队 {candidate.estimated_queue_min ?? "--"} 分 · ¥{candidate.estimated_cost ?? "--"}</span>
+                </div>
+                <p>{candidate.why_candidate}</p>
+                <small>
+                  {candidate.delta_minutes >= 0 ? "+" : ""}
+                  {candidate.delta_minutes} 分钟 · 匹配 {Math.round(candidate.score_breakdown.total ?? 0)}
+                </small>
+                <button
+                  className="secondary-button"
+                  disabled={loading || tripLoading}
+                  onClick={() => replaceCandidate(candidate)}
+                  type="button"
+                >
+                  <RefreshCw size={16} />
+                  替换第 {(candidate.replace_stop_index ?? 0) + 1} 站
+                </button>
+              </article>
+            ))}
+          </div>
+        </section>
+      ) : null}
       <section className="replan-panel">
         {replanShortcuts.map(shortcut => (
           <button

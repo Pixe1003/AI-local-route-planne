@@ -20,8 +20,18 @@ class AgentOrchestrator:
         plan_id: str,
         user_message: str,
         chat_history: list[ChatTurn],
+        action_type: str | None = None,
+        target_stop_index: int | None = None,
+        replacement_poi_id: str | None = None,
     ) -> ChatResponse:
-        return ChatService().adjust_plan(plan_id, user_message, chat_history)
+        return ChatService().adjust_plan(
+            plan_id,
+            user_message,
+            chat_history,
+            action_type,
+            target_stop_index,
+            replacement_poi_id,
+        )
 
     def list_trips(self, user_id: str) -> list[TripSummary]:
         return TripService().list_trips(user_id)

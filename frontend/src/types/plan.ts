@@ -1,5 +1,6 @@
 import type { TimeWindow } from "./pool"
 import type { UserNeedProfile } from "./onboarding"
+import type { PreferenceSnapshot } from "./preferences"
 
 export interface PlanContext {
   city: string
@@ -15,6 +16,7 @@ export interface PlanRequest {
   free_text?: string
   context?: PlanContext
   need_profile?: UserNeedProfile
+  preference_snapshot?: PreferenceSnapshot
 }
 
 export interface Transport {
@@ -68,6 +70,18 @@ export interface PlanSummary {
   }
 }
 
+export interface AlternativePoi {
+  poi_id: string
+  poi_name: string
+  category: string
+  replace_stop_index?: number | null
+  why_candidate: string
+  delta_minutes: number
+  estimated_queue_min?: number | null
+  estimated_cost?: number | null
+  score_breakdown: Record<string, number>
+}
+
 export interface RefinedPlan {
   plan_id: string
   style: string
@@ -75,6 +89,7 @@ export interface RefinedPlan {
   description: string
   stops: RefinedStop[]
   summary: PlanSummary
+  alternative_pois: AlternativePoi[]
 }
 
 export interface PlanResponse {

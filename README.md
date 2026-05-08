@@ -1,44 +1,54 @@
 # AI 本地路线智能规划系统
 
-美团黑客松题目「AI 本地路线智能规划」的可运行全栈脚手架。主链路已经打通：输入出行需求、生成 POI 推荐池、勾选候选、生成 3 条风格化路线，并支持对话调整。
+美团黑客松「现在就出发 · AI 本地路线智能规划」MVP。当前产品主线是：
+
+`UGC 偏好冷启动 -> 一键即时路线 -> 备选 POI 调整 -> 对话重规划`
+
+项目不接真实用户隐私数据，用户历史偏好由首屏 UGC Feed 的收藏行为模拟。地图、距离和 LLM 能力都保留扩展接口；Demo 默认使用上海本地 mock 数据和确定性规划链路，保证快速、稳定、可解释。
+
+## 当前能力
+
+- UGC Feed 首屏：展示小红书/大众点评式内容卡片，用户收藏 POI 形成偏好。
+- 偏好快照：根据收藏 POI 生成标签、类别、关键词权重。
+- 即时路线：生成一条主路线，覆盖至少 3 个 POI，并包含餐饮与文化/娱乐/景点类 POI。
+- 多目标评分：综合用户提示词、收藏偏好、距离、预算、排队、评分和 UGC 证据。
+- 备选 POI：展示可替换地点，可一键替换路线中的某一站。
+- 对话重规划：支持少排队、省钱、下雨、少走路、压缩时间、替换备选等调整。
+- 兜底机制：LLM 或外部 API 不可用时，仍可用规则模板和本地距离估算生成路线。
 
 ## 技术栈
 
-- 后端：FastAPI、Pydantic、SQLAlchemy 模型、DeepSeek 适配边界、本地 seed 数据兜底
-- 前端：React、TypeScript、Vite、Zustand、axios、lucide-react
-- 数据：PostgreSQL 表模型、Chroma 路径预留、内置上海 POI/UGC mock
-- 地图：高德接入位预留，当前提供本地距离兜底视图
+- Backend: FastAPI, Pydantic, local seed POI/UGC data
+- Frontend: React, TypeScript, Vite, Zustand, axios, lucide-react
+- Tests: pytest, Vitest
 
 ## 本地启动
 
-```bash
-python -m pip install -e backend[dev]
+Backend:
+
+```powershell
+$env:PYTHONPATH='backend'
 python -m uvicorn app.main:app --app-dir backend --reload --port 8000
 ```
 
-前端需要 Node/npm：
+Frontend:
 
-```bash
+```powershell
 cd frontend
 npm install
 npm run dev
 ```
 
-访问：
+访问地址：
 
-- 后端健康检查：http://127.0.0.1:8000/health
-- API 文档：http://127.0.0.1:8000/docs
-- 前端：http://127.0.0.1:5173
-
-## Docker 启动
-
-```bash
-cp .env.example .env
-docker compose up --build
-```
+- Backend health: http://127.0.0.1:8000/health
+- API docs: http://127.0.0.1:8000/docs
+- Frontend: http://127.0.0.1:5173
 
 ## 核心 API
 
+- `GET /api/ugc/feed`
+- `POST /api/preferences/snapshot`
 - `POST /api/pool/generate`
 - `POST /api/plan/generate`
 - `POST /api/chat/adjust`
@@ -48,6 +58,11 @@ docker compose up --build
 
 ## 验证
 
-```bash
-$env:PYTHONPATH='backend'; python -m pytest backend/tests/test_demo_flow.py -q
+```powershell
+$env:PYTHONPATH='backend'
+python -m pytest backend/tests -q
+
+cd frontend
+npm test
+npm run build
 ```

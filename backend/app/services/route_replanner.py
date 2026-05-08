@@ -22,6 +22,8 @@ class ReplanEvent(BaseModel):
     event_type: str
     message: str | None = None
     target_poi_id: str | None = None
+    target_stop_index: int | None = None
+    replacement_poi_id: str | None = None
 
 
 class ReplanResponse(BaseModel):
@@ -41,7 +43,12 @@ class RouteReplanner:
         self.validator = RouteValidator()
 
     def replan(self, plan: RefinedPlan, event: ReplanEvent) -> ReplanResponse:
-        if event.event_type == "WEATHER_CHANGED":
+        if event.event_type == "REPLACE_WITH_ALTERNATIVE":
+            updated = self._replace_with_specific_poi(plan, event)
+            level = "minor"
+            strategy = "replace_with_user_selected_alternative"
+            message = "已把你选中的备选 POI 替换进主路线，并重新校验可执行性。"
+        elif event.event_type == "WEATHER_CHANGED":
             updated = self._replace_outdoor_stops(plan)
             level = "partial"
             strategy = "replace_weather_sensitive_pois"
@@ -60,7 +67,7 @@ class RouteReplanner:
             updated = self._add_cafe(plan)
             level = "minor"
             strategy = "insert_rest_stop"
-            message = "已加入一个低排队咖啡休息点，并保留原有主线。"
+            message = "已加入一个低排队咖啡休息点，并保留原本主线。"
         else:
             updated = self._replace_high_queue_stop(plan, event)
             level = "minor"
@@ -74,6 +81,17 @@ class RouteReplanner:
             plan=updated,
             assistant_message=message,
         )
+
+    def _replace_with_specific_poi(self, plan: RefinedPlan, event: ReplanEvent) -> RefinedPlan:
+        updated = plan.model_copy(deep=True)
+        if event.replacement_poi_id is None or not updated.stops:
+            return updated
+        index = event.target_stop_index if event.target_stop_index is not None else 0
+        index = max(0, min(index, len(updated.stops) - 1))
+        replacement = self.repo.get(event.replacement_poi_id)
+        updated.stops[index] = self._make_refined_stop(replacement, updated.stops[index])
+        updated.summary.tradeoffs = ["已按用户选择替换单站，整体顺序保持不变。"]
+        return self._refresh_summary(updated)
 
     def _replace_high_queue_stop(self, plan: RefinedPlan, event: ReplanEvent) -> RefinedPlan:
         updated = plan.model_copy(deep=True)
@@ -94,7 +112,7 @@ class RouteReplanner:
         if replacement is None:
             return updated
         updated.stops[target_index] = self._make_refined_stop(replacement, old_stop)
-        updated.summary.tradeoffs = ["替换后保留原路线顺序，现场交通时间建议刷新确认。"]
+        updated.summary.tradeoffs = ["替换后保留原路线顺序，现场交通时间建议再刷新确认。"]
         return self._refresh_summary(updated)
 
     def _replace_outdoor_stops(self, plan: RefinedPlan) -> RefinedPlan:
@@ -111,7 +129,7 @@ class RouteReplanner:
             if replacement:
                 updated.stops[index] = self._make_refined_stop(replacement, stop)
                 existing.add(replacement.id)
-        updated.summary.tradeoffs = ["雨天方案减少户外暴露，文化/商场/咖啡点权重提高。"]
+        updated.summary.tradeoffs = ["雨天方案减少户外暴露，文艺/商场/咖啡点权重提高。"]
         return self._refresh_summary(updated)
 
     def _replace_expensive_stop(self, plan: RefinedPlan) -> RefinedPlan:
@@ -136,7 +154,7 @@ class RouteReplanner:
     def _compress_route(self, plan: RefinedPlan, message: str) -> RefinedPlan:
         updated = plan.model_copy(deep=True)
         target_minutes = 120 if "2" in message or "两" in message else 180
-        while len(updated.stops) > 1 and updated.summary.total_duration_min > target_minutes:
+        while len(updated.stops) > 3 and updated.summary.total_duration_min > target_minutes:
             updated.stops.pop()
             updated = self._refresh_summary(updated)
         updated.summary.tradeoffs = [f"已压缩到约 {updated.summary.total_duration_min} 分钟。"]
@@ -158,7 +176,7 @@ class RouteReplanner:
             poi_name=cafe.name,
             arrival_time=arrival,
             departure_time=arrival,
-            why_this_one=f"{cafe.name}评分依据：低排队和咖啡休息需求匹配，适合中途缓冲。",
+            why_this_one=f"{cafe.name}低排队且适合中途休息。",
             ugc_evidence=[
                 UgcSnippet(quote=f"{cafe.name}适合临时休息，下午更安静。", source="dianping")
             ],
@@ -180,7 +198,7 @@ class RouteReplanner:
             poi_name=poi.name,
             arrival_time=old_stop.arrival_time,
             departure_time=old_stop.departure_time,
-            why_this_one=f"{poi.name}评分依据：低排队/同类匹配，总分 {score.total:.1f}。",
+            why_this_one=f"{poi.name}低排队/同类匹配，总分 {score.total:.1f}。",
             ugc_evidence=self.ugc_service.get_highlight_quotes(poi.id, [], 2),
             risk_warning=None,
             transport_to_next=old_stop.transport_to_next,
@@ -231,16 +249,14 @@ class RouteReplanner:
                 queue_total_min=plan.summary.total_queue_min,
             ),
         )
-        intent = None
-        if profile:
-            from app.services.intent_service import IntentService
-
-            intent = IntentService().parse_intent(
-                profile.user_id,
-                [stop.poi_id for stop in plan.stops],
-                profile.raw_query,
-                context,
-            )
-        if intent is None:
+        if profile is None:
             return ValidationResult(is_valid=True)
+        from app.services.intent_service import IntentService
+
+        intent = IntentService().parse_intent(
+            profile.user_id,
+            [stop.poi_id for stop in plan.stops],
+            profile.raw_query,
+            context,
+        )
         return self.validator.validate(skeleton, intent, context, profile)

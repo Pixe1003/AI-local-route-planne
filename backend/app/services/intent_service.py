@@ -18,14 +18,14 @@ class IntentService:
     ) -> StructuredIntent:
         text = free_text or ""
         avoid_queue = any(word in text for word in ["不排队", "少排队", "排队太久"])
-        photography = any(word in text for word in ["拍照", "打卡", "情侣"])
-        food = any(word in text for word in ["吃", "饭", "晚餐", "美食", "探店"])
-        pace = "relaxed" if any(word in text for word in ["松弛", "轻松", "慢"]) else "balanced"
+        photography = any(word in text for word in ["拍照", "打卡", "情侣", "顺路拍照"])
+        food = any(word in text for word in ["吃", "饭", "晚餐", "美食", "探店", "本地菜"])
+        pace = "relaxed" if any(word in text for word in ["松弛", "轻松", "不赶"]) else "balanced"
         if any(word in text for word in ["多逛", "高效", "打卡"]):
             pace = "efficient"
         budget_total = context.budget_per_person
-        if budget_total is not None:
-            budget_total *= 2 if context.party == "couple" else 1
+        if budget_total is not None and context.party == "couple":
+            budget_total *= 2
         fallback = StructuredIntent(
             hard_constraints=HardConstraints(
                 start_time=context.time_window.start,
@@ -37,7 +37,7 @@ class IntentService:
             soft_preferences=SoftPreferences(
                 pace=pace,
                 avoid_queue=avoid_queue,
-                weather_sensitive=False,
+                weather_sensitive=any(word in text for word in ["下雨", "雨天", "室内"]),
                 photography_priority=photography or context.party == "couple",
                 food_diversity=food,
                 custom_notes=[text] if text else [],
@@ -56,7 +56,6 @@ class IntentService:
     ) -> StructuredIntent:
         prompt = f"""
 请将用户输入解析为 StructuredIntent JSON。你只负责理解需求，不要生成路线，不要新增 POI。
-
 StructuredIntent 字段：
 - hard_constraints.must_include_meal: 是否必须包含正餐
 - soft_preferences.pace: relaxed/balanced/efficient
@@ -65,7 +64,6 @@ StructuredIntent 字段：
 - avoid_pois: 用户明确排除的 POI id，无法确定则 []
 
 硬约束 start_time/end_time/budget_total 和 must_visit_pois 由系统上下文决定，不要覆盖。
-
 系统上下文：
 city={context.city}
 time_window={context.time_window.start}-{context.time_window.end}

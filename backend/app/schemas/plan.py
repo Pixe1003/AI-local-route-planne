@@ -4,6 +4,7 @@ from pydantic import BaseModel, Field
 
 from app.schemas.onboarding import UserNeedProfile
 from app.schemas.pool import TimeWindow
+from app.schemas.preferences import PreferenceSnapshot
 
 
 class PlanContext(BaseModel):
@@ -66,6 +67,7 @@ class ScoreBreakdown(BaseModel):
     context_fit: float = 0.0
     ugc_match: float = 0.0
     service_closure: float = 0.0
+    history_preference: float = 0.0
     queue_penalty: float = 0.0
     price_penalty: float = 0.0
     distance_penalty: float = 0.0
@@ -135,6 +137,18 @@ class PlanSummary(BaseModel):
     validation: ValidationResult = Field(default_factory=lambda: ValidationResult(is_valid=True))
 
 
+class AlternativePoi(BaseModel):
+    poi_id: str
+    poi_name: str
+    category: str
+    replace_stop_index: Optional[int] = None
+    why_candidate: str
+    delta_minutes: int = 0
+    estimated_queue_min: Optional[int] = None
+    estimated_cost: Optional[int] = None
+    score_breakdown: dict[str, float] = Field(default_factory=dict)
+
+
 class RefinedPlan(BaseModel):
     plan_id: str
     style: str
@@ -142,6 +156,7 @@ class RefinedPlan(BaseModel):
     description: str
     stops: list[RefinedStop]
     summary: PlanSummary
+    alternative_pois: list[AlternativePoi] = Field(default_factory=list)
 
 
 class PlanRequest(BaseModel):
@@ -150,6 +165,7 @@ class PlanRequest(BaseModel):
     free_text: Optional[str] = None
     context: Optional[PlanContext] = None
     need_profile: Optional[UserNeedProfile] = None
+    preference_snapshot: Optional[PreferenceSnapshot] = None
 
 
 class PlanResponse(BaseModel):
