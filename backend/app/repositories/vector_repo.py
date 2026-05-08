@@ -11,7 +11,7 @@ class VectorRepository:
             if tag in text:
                 score += 0.18
         if free_text:
-            for keyword in ["拍照", "咖啡", "排队", "晚餐", "情侣", "安静", "文艺", "夜景"]:
+            for keyword in ["拍照", "咖啡", "排队", "晚餐", "情侣", "安静", "文艺", "夜景", "本地菜"]:
                 if keyword in free_text and keyword in text:
                     score += 0.12
         if "低排队" in poi.tags:

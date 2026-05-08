@@ -1,4 +1,5 @@
 import type { UserNeedProfile } from "./onboarding"
+import type { PreferenceSnapshot } from "./preferences"
 
 export interface TimeWindow {
   start: string
@@ -16,6 +17,7 @@ export interface PoolRequest {
   budget_per_person?: number
   free_text?: string
   need_profile?: UserNeedProfile
+  preference_snapshot?: PreferenceSnapshot
 }
 
 export interface PoiInPool {

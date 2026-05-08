@@ -4,6 +4,7 @@ from typing import Optional
 from pydantic import BaseModel, Field, field_validator
 
 from app.schemas.onboarding import UserNeedProfile
+from app.schemas.preferences import PreferenceSnapshot
 
 
 class TimeWindow(BaseModel):
@@ -33,6 +34,7 @@ class PoolRequest(BaseModel):
     budget_per_person: Optional[int] = None
     free_text: Optional[str] = None
     need_profile: Optional[UserNeedProfile] = None
+    preference_snapshot: Optional[PreferenceSnapshot] = None
 
 
 class PoiInPool(BaseModel):

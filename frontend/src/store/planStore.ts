@@ -3,7 +3,7 @@ import { create } from "zustand"
 import { adjustPlan } from "../api/chat"
 import { generatePlans } from "../api/plan"
 import type { ChatResponse, ChatTurn } from "../types/chat"
-import type { PlanRequest, PlanResponse, RefinedPlan } from "../types/plan"
+import type { AlternativePoi, PlanRequest, PlanResponse, RefinedPlan } from "../types/plan"
 
 interface PlanStore {
   plans: RefinedPlan[]
@@ -16,6 +16,7 @@ interface PlanStore {
   setPlansFromVersion: (plans: RefinedPlan[], activePlanId?: string | null) => void
   applyAdjustment: (response: ChatResponse) => void
   sendAdjustment: (message: string) => Promise<ChatResponse | null>
+  replaceWithAlternative: (candidate: AlternativePoi) => Promise<ChatResponse | null>
 }
 
 export const usePlanStore = create<PlanStore>((set, get) => ({
@@ -90,6 +91,35 @@ export const usePlanStore = create<PlanStore>((set, get) => ({
       set({
         loading: false,
         error: error instanceof Error ? error.message : "调整失败"
+      })
+      return null
+    }
+  },
+  replaceWithAlternative: async candidate => {
+    const activePlanId = get().activePlanId
+    if (!activePlanId) return null
+    const userTurn: ChatTurn = {
+      role: "user",
+      content: `替换为 ${candidate.poi_name}`,
+      timestamp: new Date().toISOString()
+    }
+    set({ loading: true, chatHistory: [...get().chatHistory, userTurn] })
+    try {
+      const response = await adjustPlan({
+        plan_id: activePlanId,
+        user_message: userTurn.content,
+        chat_history: [...get().chatHistory, userTurn],
+        action_type: "replace_stop",
+        target_stop_index: candidate.replace_stop_index ?? 0,
+        replacement_poi_id: candidate.poi_id
+      })
+      get().applyAdjustment(response)
+      set({ loading: false })
+      return response
+    } catch (error) {
+      set({
+        loading: false,
+        error: error instanceof Error ? error.message : "替换失败"
       })
       return null
     }

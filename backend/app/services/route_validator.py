@@ -13,6 +13,8 @@ from app.utils.time_utils import minutes_between
 
 
 class RouteValidator:
+    EXPERIENCE_CATEGORIES = {"culture", "scenic", "entertainment", "nightlife"}
+
     def __init__(self) -> None:
         self.repo = get_poi_repository()
 
@@ -28,6 +30,19 @@ class RouteValidator:
         stop_ids = [stop.poi_id for stop in route.stops]
         pois = self.repo.get_many(stop_ids)
         poi_by_id = {poi.id: poi for poi in pois}
+        route_categories = {poi.category for poi in pois}
+
+        if len(route.stops) < 3:
+            issues.append(ValidationIssue(code="too_few_pois", message="路线至少需要串联 3 个 POI。"))
+        if "restaurant" not in route_categories:
+            issues.append(ValidationIssue(code="meal_missing", message="路线需要包含至少 1 个餐饮点。"))
+        if not route_categories & self.EXPERIENCE_CATEGORIES:
+            issues.append(
+                ValidationIssue(
+                    code="experience_missing",
+                    message="路线需要包含至少 1 个文化、娱乐、景点或夜景点。",
+                )
+            )
 
         for stop in route.stops:
             poi = poi_by_id.get(stop.poi_id)
@@ -76,14 +91,6 @@ class RouteValidator:
                     message=f"缺少用户必去点 {poi_id}。",
                     target=poi_id,
                 )
-            )
-
-        if intent.hard_constraints.must_include_meal and not any(
-            poi_by_id.get(stop.poi_id) and poi_by_id[stop.poi_id].category == "restaurant"
-            for stop in route.stops
-        ):
-            issues.append(
-                ValidationIssue(code="meal_missing", message="路线没有包含正餐站点。")
             )
 
         queue_threshold = 45 if intent.soft_preferences.avoid_queue else 60

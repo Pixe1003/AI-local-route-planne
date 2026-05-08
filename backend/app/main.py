@@ -7,8 +7,9 @@ from app.api import (
     routes_onboarding,
     routes_plan,
     routes_pool,
-    routes_replan,
+    routes_preferences,
     routes_trips,
+    routes_ugc,
 )
 from app.config import get_settings
 
@@ -29,8 +30,9 @@ app.include_router(routes_plan.router, prefix="/api")
 app.include_router(routes_chat.router, prefix="/api")
 app.include_router(routes_meta.router, prefix="/api")
 app.include_router(routes_onboarding.router, prefix="/api")
-app.include_router(routes_replan.router, prefix="/api")
 app.include_router(routes_trips.router, prefix="/api")
+app.include_router(routes_ugc.router, prefix="/api")
+app.include_router(routes_preferences.router, prefix="/api")
 
 
 @app.get("/health")

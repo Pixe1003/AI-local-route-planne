@@ -1,6 +1,7 @@
 from app.repositories.poi_repo import get_poi_repository
 from app.schemas.onboarding import UserNeedProfile
 from app.schemas.plan import RouteMetrics, RouteSkeleton, RouteStop, StructuredIntent
+from app.schemas.preferences import PreferenceSnapshot
 from app.services.route_validator import RouteValidator
 from app.solver.distance import estimate_transport
 from app.utils.time_utils import add_minutes, minutes_between
@@ -18,6 +19,7 @@ class RouteRepairer:
         *,
         context=None,
         profile: UserNeedProfile | None = None,
+        preference_snapshot: PreferenceSnapshot | None = None,
         max_iterations: int = 2,
     ) -> RouteSkeleton:
         current = route
@@ -49,8 +51,10 @@ class RouteRepairer:
         duration_budget = minutes_between(
             intent.hard_constraints.start_time, intent.hard_constraints.end_time
         )
-        while len(current.stops) > 1 and current.metrics.total_duration_min > duration_budget:
+        while len(current.stops) > 3 and current.metrics.total_duration_min > duration_budget:
             current = self._drop_last_stop(current, intent)
+        if len(current.stops) >= 3 and current.metrics.total_duration_min > duration_budget:
+            current = self._compress_stop_durations(current, intent, duration_budget)
         return current
 
     def _drop_until_budget_fits(
@@ -58,12 +62,12 @@ class RouteRepairer:
     ) -> RouteSkeleton:
         current = route
         budget = intent.hard_constraints.budget_total
-        while budget and len(current.stops) > 1 and current.metrics.total_cost > budget:
+        while budget and len(current.stops) > 3 and current.metrics.total_cost > budget:
             current = self._drop_most_expensive_stop(current, intent)
         return current
 
     def _drop_last_stop(self, route: RouteSkeleton, intent: StructuredIntent) -> RouteSkeleton:
-        if len(route.stops) <= 1:
+        if len(route.stops) <= 3:
             return route
         kept_ids = [stop.poi_id for stop in route.stops[:-1]]
         dropped_id = route.stops[-1].poi_id
@@ -75,10 +79,57 @@ class RouteRepairer:
             {**route.drop_reasons, dropped_id: "时间窗不足，自动压缩路线"},
         )
 
+    def _compress_stop_durations(
+        self,
+        route: RouteSkeleton,
+        intent: StructuredIntent,
+        duration_budget: int,
+    ) -> RouteSkeleton:
+        if not route.stops:
+            return route
+        transport_minutes = sum(
+            stop.transport_to_next.duration_min
+            for stop in route.stops
+            if stop.transport_to_next is not None
+        )
+        available_visit = max(len(route.stops) * 5, duration_budget - transport_minutes)
+        per_stop = max(5, available_visit // len(route.stops))
+        current_time = intent.hard_constraints.start_time
+        stops: list[RouteStop] = []
+        for index, stop in enumerate(route.stops):
+            arrival = current_time
+            departure = add_minutes(arrival, per_stop)
+            transport = stop.transport_to_next
+            if index < len(route.stops) - 1 and transport is not None:
+                current_time = add_minutes(departure, transport.duration_min)
+            stops.append(
+                RouteStop(
+                    poi_id=stop.poi_id,
+                    arrival_time=arrival,
+                    departure_time=departure,
+                    duration_min=per_stop,
+                    transport_to_next=transport,
+                )
+            )
+        total_duration = minutes_between(intent.hard_constraints.start_time, stops[-1].departure_time)
+        return RouteSkeleton(
+            style=route.style,
+            stops=stops,
+            dropped_poi_ids=route.dropped_poi_ids,
+            drop_reasons=route.drop_reasons,
+            metrics=RouteMetrics(
+                total_duration_min=total_duration,
+                total_cost=route.metrics.total_cost,
+                poi_count=len(stops),
+                walking_distance_meters=route.metrics.walking_distance_meters,
+                queue_total_min=route.metrics.queue_total_min,
+            ),
+        )
+
     def _drop_most_expensive_stop(
         self, route: RouteSkeleton, intent: StructuredIntent
     ) -> RouteSkeleton:
-        if len(route.stops) <= 1:
+        if len(route.stops) <= 3:
             return route
         priced = [(self.repo.get(stop.poi_id).price_per_person or 0, stop.poi_id) for stop in route.stops]
         _, dropped_id = max(priced)
@@ -88,7 +139,7 @@ class RouteRepairer:
             kept_ids,
             intent,
             route.dropped_poi_ids + [dropped_id],
-            {**route.drop_reasons, dropped_id: "超出预算，自动替换/删除高价站点"},
+            {**route.drop_reasons, dropped_id: "超出预算，自动删除高价站点"},
         )
 
     def _replace_high_queue_stops(
