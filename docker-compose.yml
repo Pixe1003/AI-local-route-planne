@@ -14,12 +14,12 @@
     build:
       context: ./backend
     environment:
-      LLM_PROVIDER: ${LLM_PROVIDER:-mimo}
+      LLM_PROVIDER: ${LLM_PROVIDER:-longcat}
       LLM_API_KEY: ${LLM_API_KEY:-}
-      LLM_MODEL: ${LLM_MODEL:-mimo-v2-pro}
-      LLM_BASE_URL: ${LLM_BASE_URL:-https://api.mimo-v2.com/v1}
+      LLM_MODEL: ${LLM_MODEL:-LongCat-Flash-Chat}
+      LLM_BASE_URL: ${LLM_BASE_URL:-https://api.longcat.chat/openai/v1}
       LLM_AUTH_HEADER: ${LLM_AUTH_HEADER:-authorization}
-      LLM_TIMEOUT_SECONDS: ${LLM_TIMEOUT_SECONDS:-20}
+      LLM_TIMEOUT_SECONDS: ${LLM_TIMEOUT_SECONDS:-30}
       DATABASE_URL: postgresql://local_route:local_route@postgres:5432/local_route
       VECTOR_DB_PATH: /app/data/chroma
       DEFAULT_CITY: shanghai

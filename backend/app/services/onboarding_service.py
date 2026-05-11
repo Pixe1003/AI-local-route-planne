@@ -90,7 +90,9 @@ UserNeedProfile 字段：
             merged = self._deep_merge(fallback.model_dump(), llm_data)
             merged["user_id"] = fallback.user_id
             merged["raw_query"] = text
-            return UserNeedProfile.model_validate(merged)
+            profile = UserNeedProfile.model_validate(merged)
+            self._normalize_profile_times(profile)
+            return profile
         except (TypeError, ValidationError, ValueError):
             return fallback
 
@@ -189,6 +191,7 @@ UserNeedProfile 字段：
         profile.date = answers.get("date", profile.date)
         profile.time.start_time = answers.get("start_time", profile.time.start_time)
         profile.time.end_time = answers.get("end_time", profile.time.end_time)
+        self._normalize_profile_times(profile)
         if profile.time.start_time and profile.time.end_time:
             profile.time.time_budget_minutes = self._minutes_between(
                 profile.time.start_time, profile.time.end_time
@@ -240,6 +243,25 @@ UserNeedProfile 字段：
         return missing, round(score, 2)
 
     def _minutes_between(self, start: str, end: str) -> int:
+        start = self._normalize_time_value(start) or start
+        end = self._normalize_time_value(end) or end
         start_hour, start_minute = [int(part) for part in start.split(":")]
         end_hour, end_minute = [int(part) for part in end.split(":")]
         return max(0, (end_hour * 60 + end_minute) - (start_hour * 60 + start_minute))
+
+    def _normalize_profile_times(self, profile: UserNeedProfile) -> None:
+        profile.time.start_time = self._normalize_time_value(profile.time.start_time)
+        profile.time.end_time = self._normalize_time_value(profile.time.end_time)
+        if profile.time.start_time and profile.time.end_time:
+            profile.time.time_budget_minutes = self._minutes_between(
+                profile.time.start_time,
+                profile.time.end_time,
+            )
+
+    def _normalize_time_value(self, value: str | None) -> str | None:
+        if not value:
+            return None
+        match = re.search(r"(?<!\d)([01]?\d|2[0-3]):([0-5]\d)", value)
+        if not match:
+            return value
+        return f"{int(match.group(1)):02d}:{match.group(2)}"

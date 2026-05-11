@@ -8,6 +8,7 @@ from app.api import (
     routes_plan,
     routes_pool,
     routes_preferences,
+    routes_route,
     routes_trips,
     routes_ugc,
 )
@@ -33,6 +34,7 @@ app.include_router(routes_onboarding.router, prefix="/api")
 app.include_router(routes_trips.router, prefix="/api")
 app.include_router(routes_ugc.router, prefix="/api")
 app.include_router(routes_preferences.router, prefix="/api")
+app.include_router(routes_route.router, prefix="/api")
 
 
 @app.get("/health")

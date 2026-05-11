@@ -3,16 +3,14 @@ import { FormEvent, useEffect, useMemo, useState } from "react"
 import { useNavigate } from "react-router-dom"
 
 import { fetchUgcFeed } from "../api/ugc"
-import { usePlanStore } from "../store/planStore"
+import { useAmapRouteStore } from "../store/amapRouteStore"
 import { usePoolStore } from "../store/poolStore"
 import { usePreferenceStore } from "../store/preferenceStore"
-import { useTripStore } from "../store/tripStore"
 import { useUserStore } from "../store/userStore"
 import type { UserNeedProfile } from "../types/onboarding"
 import type { PreferenceSnapshot } from "../types/preferences"
 import type { PoolRequest } from "../types/pool"
 import type { UgcFeedItem } from "../types/ugc"
-import { planningContextFromProfile } from "../utils/planning"
 
 const categoryLabels: Record<string, string> = {
   restaurant: "餐饮",
@@ -30,8 +28,7 @@ export function DiscoveryFeedPage() {
   const { userId, setNeedProfile } = useUserStore()
   const { likedPoiIds, isLiked, toggleLike, syncSnapshot, loading: preferenceLoading } = usePreferenceStore()
   const { fetchPool, loading: poolLoading, error: poolError } = usePoolStore()
-  const { generatePlans, loading: planLoading, error: planError } = usePlanStore()
-  const { saveVersion, loading: tripLoading, error: tripError } = useTripStore()
+  const { setRouteRequest } = useAmapRouteStore()
   const [feed, setFeed] = useState<UgcFeedItem[]>([])
   const [feedError, setFeedError] = useState<string | null>(null)
   const [panelOpen, setPanelOpen] = useState(false)
@@ -52,7 +49,7 @@ export function DiscoveryFeedPage() {
     [feed, likedPoiIds]
   )
 
-  const busy = preferenceLoading || poolLoading || planLoading || tripLoading
+  const busy = preferenceLoading || poolLoading
 
   const buildProfile = (): UserNeedProfile => ({
     user_id: userId,
@@ -103,25 +100,21 @@ export function DiscoveryFeedPage() {
     setNeedProfile(profile)
     const pool = await fetchPool(poolRequest(profile, snapshot))
     if (!pool) return
-    const planResponse = await generatePlans({
+    const routePoiIds = pool.default_selected_ids.slice(0, 5)
+    if (routePoiIds.length < 2) {
+      setFeedError("至少需要 2 个 POI 才能生成高德路线")
+      return
+    }
+    setRouteRequest({
+      mode: "driving",
+      poi_ids: routePoiIds,
+      source: "ugc_instant_route",
       pool_id: pool.pool_id,
-      selected_poi_ids: pool.default_selected_ids,
       free_text: query,
-      need_profile: profile,
-      preference_snapshot: snapshot
+      date,
+      time_window: { start, end }
     })
-    if (!planResponse?.plans.length) return
-    const trip = await saveVersion({
-      user_id: userId,
-      profile,
-      planning_context: planningContextFromProfile(profile),
-      plans: planResponse.plans,
-      active_plan_id: planResponse.plans[0].plan_id,
-      pool_id: pool.pool_id,
-      selected_poi_ids: pool.default_selected_ids,
-      source: "ugc_instant_plan"
-    })
-    if (trip) navigate(`/trips/${trip.trip_id}/plan`)
+    navigate("/route-map")
   }
 
   return (
@@ -132,9 +125,6 @@ export function DiscoveryFeedPage() {
           <h1>现在就出发</h1>
           <p>收藏会模拟历史偏好，路线会优先参考你喜欢过的标签、类别和 POI。</p>
         </div>
-        <button className="secondary-button" onClick={() => navigate("/trips")} type="button">
-          我的行程
-        </button>
       </section>
 
       <section className="liked-strip">
@@ -216,7 +206,7 @@ export function DiscoveryFeedPage() {
               <input onChange={event => setEnd(event.target.value)} type="time" value={end} />
             </label>
           </div>
-          {poolError || planError || tripError ? <p className="error-text">{poolError ?? planError ?? tripError}</p> : null}
+          {poolError ? <p className="error-text">{poolError}</p> : null}
           <button className="primary-button" disabled={busy} type="submit">
             <Route size={18} />
             {busy ? "生成中" : "生成即时路线"}

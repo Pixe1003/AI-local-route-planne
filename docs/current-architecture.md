@@ -1,108 +1,90 @@
 # AIroute 当前架构
 
-本文档只保留当前 Demo 真实使用的产品链路和代码结构。旧版“多日旅行规划”“三条完整路线对比”“独立推荐池页面”的说明已移除。
+本文只描述当前 Demo 真实使用的产品链路和代码结构。旧的多页行程创建、计划结果页、计划对比页已经从前端下线。
 
 ## 产品主线
 
 ```mermaid
 flowchart LR
-  feed["UGC Feed\n收藏 POI"] --> snapshot["PreferenceSnapshot\n偏好权重"]
-  snapshot --> panel["轻量规划面板\n提示词 / 时间窗 / 预算 / 出发区域"]
-  panel --> plan["即时主路线\n地图 / 时间轴 / 推荐理由"]
-  plan --> alternatives["备选 POI\n一键替换"]
-  alternatives --> plan
-  plan --> chat["对话调整\n少排队 / 下雨 / 少走路 / 省钱"]
-  chat --> plan
+  feed["UGC Feed\n收藏/点赞 POI"] --> snapshot["PreferenceSnapshot\n偏好权重"]
+  snapshot --> pool["POI 推荐池\n结构化过滤 + 多维排序"]
+  pool --> route["/api/route/chain\n高德真实路线"]
+  route --> map["高德地图页\n分段 / 总距离 / GeoJSON"]
+  map --> feedback["/api/chat/adjust\n反馈更新 POI"]
+  feedback --> pool
 ```
 
-核心原则：
+核心边界：
 
-- 用户输入提示词优先，时间、预算、必去、避开项、少排队等硬约束先过滤。
-- UGC 收藏偏好作为软约束，只提高相似 POI 的评分，不强行覆盖用户当前需求。
-- 收藏 POI 合理时可进入主路线；太远、排队过久或违反时间窗时进入备选区并说明原因。
-- 默认展示一条可执行主路线，同时给出可替换 POI，降低即时场景下的选择负担。
+- 大模型不直接生成路线，只负责理解需求、辅助推荐解释和反馈约束更新。
+- POI 推荐由后端系统排序决定，高德只负责真实路线、距离、耗时和地图线。
+- 用户提示词优先于历史点赞；UGC 偏好只作为软约束提高相似 POI 权重。
+- 距离估算只作用于候选集，不对全量 POI 两两调用高德。
 
 ## 前端结构
 
 ```text
 frontend/src
-  App.tsx                         路由入口
-  api/client.ts                   后端 API 封装
-  pages/DiscoveryFeedPage.tsx     首屏 UGC Feed 与规划入口
-  pages/PlanResultPage.tsx        主路线、备选 POI、对话调整
-  pages/TripsPage.tsx             已保存行程列表
-  pages/TripDetailPage.tsx        行程详情
+  App.tsx                         只暴露 UGC 首页与高德路线页
+  pages/DiscoveryFeedPage.tsx     UGC Feed、偏好冷启动、POI 推荐入口
+  pages/AmapRoutePage.tsx         高德路线结果与反馈调整
+  components/AmapRouteMap.tsx     高德 JS 地图渲染
   store/preferenceStore.ts        收藏状态与偏好快照
-  store/planStore.ts              当前路线、备选、聊天记录
-  store/tripStore.ts              行程管理状态
-  types/api.ts                    前后端共享响应类型
+  store/poolStore.ts              POI 推荐池请求
+  store/amapRouteStore.ts         路线页请求上下文
+  api/pool.ts                     推荐池 API
+  api/route.ts                    高德路线链 API
+  api/chat.ts                     反馈调整 API
+  types/route.ts                  高德路线响应类型
 ```
 
-首屏不再进入旧的多步骤规划页，而是先通过 UGC Feed 让用户形成可解释的偏好数据。生成路线时，前端会把 `preference_snapshot` 一起传给候选池和路线规划接口。
+已删除的前端冗余：
+
+- `TripHomePage`、`TripCreatePage`、`TripDetailPage`
+- `RecommendPoolPage`、`PlanResultPage`
+- `planStore`、`tripStore`
+- `PlanMap`、`PlanTimeline`、`PlanCompare`
+- 旧 `/plan`、`/pool`、`/trips` 前端入口
 
 ## 后端结构
 
 ```text
 backend/app
-  main.py                         FastAPI app 与路由注册
   api/routes_ugc.py               UGC Feed
   api/routes_preferences.py       偏好快照
-  api/routes_pool.py              候选 POI 召回
-  api/routes_plan.py              主路线生成
-  api/routes_chat.py              对话调整与替换动作
-  api/routes_meta.py              城市、persona 等元数据
-  repositories/poi_repository.py  本地 seed POI/UGC 数据访问
-  schemas/*.py                    请求、响应、路线、偏好类型
-  services/preference_service.py  偏好权重计算
-  services/pool_service.py        候选召回与评分
-  services/plan_service.py        规划编排
-  services/chat_service.py        动态调整
-  services/solver_service.py      路线求解
-  services/validator.py           路线约束校验
+  api/routes_pool.py              POI 推荐池
+  api/routes_route.py             高德路线链
+  api/routes_chat.py              反馈更新推荐 POI
+  services/pool_service.py        召回、打分、排序、反馈调整
+  services/amap/                  高德 Web Service client
+  schemas/route.py                路线链请求与响应
+  schemas/pool.py                 推荐池请求与响应
 ```
 
-已删除旧版未使用模块：
-
-- 旧首页、旧候选池页、旧规划页：`HomePage.tsx`, `PoolPage.tsx`, `PlanPage.tsx`
-- 旧独立重规划接口：`routes_replan.py`
-- 未接入的 SQLAlchemy model 包
-- 未使用的 profile service
-- 过期方案文档和旧架构图片
+旧 `/api/plan/generate` 和 `/api/trips/*` 仍在后端保留兼容测试，但不再负责真实路线渲染，也不再从前端入口触发。
 
 ## 请求流
 
-1. 前端调用 `GET /api/ugc/feed` 获取本地 UGC 卡片。
-2. 用户收藏/取消收藏，`preferenceStore` 将 `liked_poi_ids` 持久化到 localStorage。
-3. 规划前调用 `POST /api/preferences/snapshot`，得到 `tag_weights`、`category_weights`、`keyword_weights`。
-4. 调用 `POST /api/pool/generate`，候选 POI 的 `ScoreBreakdown.history_preference` 体现历史偏好贡献。
-5. 调用 `POST /api/plan/generate`，得到 `RefinedPlan` 和 `alternative_pois`。
-6. 用户点击备选 POI 时，前端调用 `POST /api/chat/adjust`，传入 `action_type="replace_stop"`、`target_stop_index`、`replacement_poi_id`。
-7. 用户输入自然语言调整时，仍由 `POST /api/chat/adjust` 处理，并返回新的可执行路线。
+1. 前端调用 `GET /api/ugc/feed` 获取 UGC 卡片。
+2. 用户收藏/取消收藏，`preferenceStore` 将 `liked_poi_ids` 持久化。
+3. 点击“现在出发”时调用 `POST /api/preferences/snapshot` 生成偏好权重。
+4. 调用 `POST /api/pool/generate` 得到有序 POI 和备选 POI。
+5. 前端取推荐 POI 顺序调用 `POST /api/route/chain`，由高德返回真实路线。
+6. 用户输入反馈时调用 `POST /api/chat/adjust`，后端更新推荐 POI。
+7. 前端用新的 POI 顺序重新调用 `POST /api/route/chain`。
 
-## 规划约束
+## 推荐方法
 
-主路线必须满足：
+当前 MVP 使用本地结构化 POI/UGC 数据和可解释打分。后续 POI 规模扩大时，建议演进为：
 
-- 至少 3 个 POI。
-- 至少 1 个餐饮类 POI。
-- 至少 1 个文化、娱乐或景点类 POI。
-- 总时长不超过用户时间窗。
-- 推荐理由能追溯到用户输入、收藏偏好、POI 属性、UGC 证据或评分项。
+- 城市、营业时间、预算、类别、黑名单先做结构化过滤。
+- POI 主档案和 UGC snippet 分别建向量索引，万级数据可先用本地 Chroma/Faiss 风格接口，后续迁移 pgvector。
+- 召回 top 100-300 后再做多维排序：文本语义、UGC 偏好、POI 质量、价格、排队、类别覆盖、距离/绕路惩罚、时间窗可行性。
+- 只对 top 候选做距离测量或路线估算，最终 3-5 个 POI 再调用高德真实路线。
 
 ## 验证范围
 
-后端重点覆盖：
-
-- 偏好快照计算。
-- 历史偏好评分加权。
-- 用户提示词与历史偏好冲突时提示词优先。
-- 收藏 POI 合理进入主路线，不合理进入备选。
-- 路线约束校验。
-- 备选 POI 替换后仍通过 Validator。
-
-前端重点覆盖：
-
-- UGC 收藏/取消收藏状态。
-- 偏好持久化。
-- 生成路线时携带 `preference_snapshot`。
-- 结果页展示主路线和备选 POI。
+- 无高德 Key 时 `/api/route/chain` 返回清晰配置错误。
+- mock 高德 client 时路线接口返回分段、总距离、总耗时和 GeoJSON。
+- 推荐服务输出有序 POI，反馈调整能替换/重排推荐 POI。
+- 前端保留 UGC 首页，旧 `/plan`、`/pool`、`/trips` 路由回到首页。

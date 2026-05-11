@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react"
+import { render } from "@testing-library/react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
 import App from "../App"
@@ -10,13 +10,31 @@ vi.mock("../api/ugc", () => ({
 describe("App", () => {
   beforeEach(() => {
     window.localStorage.clear()
+    window.history.pushState({}, "", "/")
   })
 
   it("renders the UGC discovery feed as the first screen", async () => {
-    render(<App />)
+    const { container } = render(<App />)
 
-    expect(screen.getByRole("heading", { name: "现在就出发" })).toBeInTheDocument()
-    expect(screen.getByRole("button", { name: /现在出发/ })).toBeInTheDocument()
-    expect(screen.getByText(/收藏会模拟历史偏好/)).toBeInTheDocument()
+    expect(container.querySelector(".discovery-workspace")).toBeInTheDocument()
+    expect(container.querySelector(".instant-cta .primary-button")).toBeInTheDocument()
+  })
+
+  it("retires legacy planning routes back to discovery", async () => {
+    window.history.pushState({}, "", "/plan")
+
+    const { container } = render(<App />)
+
+    expect(container.querySelector(".discovery-workspace")).toBeInTheDocument()
+    expect(window.location.pathname).toBe("/")
+  })
+
+  it("retires legacy trip routes back to discovery", async () => {
+    window.history.pushState({}, "", "/trips")
+
+    const { container } = render(<App />)
+
+    expect(container.querySelector(".discovery-workspace")).toBeInTheDocument()
+    expect(window.location.pathname).toBe("/")
   })
 })

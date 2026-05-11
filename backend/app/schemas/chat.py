@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.schemas.plan import RefinedPlan
 
@@ -19,3 +19,5 @@ class ChatResponse(BaseModel):
     requires_confirmation: bool
     event_type: Optional[str] = None
     replan_level: Optional[str] = None
+    recommended_poi_ids: list[str] = Field(default_factory=list)
+    alternative_poi_ids: list[str] = Field(default_factory=list)

@@ -7,6 +7,7 @@ from app.schemas.pool import PoiInPool, PoolCategory, PoolMeta, PoolRequest, Poo
 from app.services.agent_skill_registry import get_agent_skill_registry
 from app.services.poi_scoring_service import PoiScoringService
 from app.services.state import POOL_REGISTRY
+from app.solver.distance import haversine_meters
 
 
 class PoolService:
@@ -194,7 +195,133 @@ class PoolService:
                     defaults.append(poi.id)
                 if len(defaults) >= 3:
                     break
-        return defaults
+        return self._route_order_ids(defaults)
+
+    def recommend_route_update(
+        self,
+        *,
+        pool_id: str | None,
+        current_poi_ids: list[str],
+        feedback_text: str,
+    ) -> tuple[list[str], list[str]]:
+        pool = POOL_REGISTRY.get(pool_id or "")
+        pool_pois = self._pool_pois(pool) if pool else []
+        if not pool_pois:
+            pool_pois = [
+                PoiInPool(
+                    id=poi.id,
+                    name=poi.name,
+                    category=poi.category,
+                    rating=poi.rating,
+                    price_per_person=poi.price_per_person,
+                    cover_image=poi.cover_image,
+                    distance_meters=None,
+                    why_recommend="Based on the current route feedback.",
+                    highlight_quote=poi.highlight_quotes[0].quote if poi.highlight_quotes else None,
+                    keywords=[item["keyword"] for item in poi.high_freq_keywords[:5]],
+                    estimated_queue_min=poi.queue_estimate["weekend_peak"],
+                    suitable_score=poi.rating / 5,
+                    score_breakdown={},
+                )
+                for poi in self.repo.list_by_city("shanghai")
+            ]
+        by_id = {poi.id: poi for poi in pool_pois}
+        avoid_categories = self._feedback_avoid_categories(feedback_text)
+        avoid_queue = self._feedback_avoid_queue(feedback_text)
+
+        def allowed(poi: PoiInPool) -> bool:
+            if poi.category in avoid_categories:
+                return False
+            return not (avoid_queue and (poi.estimated_queue_min or 0) > 45)
+
+        selected: list[str] = []
+        for poi_id in current_poi_ids:
+            poi = by_id.get(poi_id)
+            if poi and allowed(poi) and poi_id not in selected:
+                selected.append(poi_id)
+        for poi in sorted(pool_pois, key=lambda item: item.suitable_score, reverse=True):
+            if allowed(poi) and poi.id not in selected:
+                selected.append(poi.id)
+            if len(selected) >= 5:
+                break
+
+        selected = self._ensure_route_mix(selected, pool_pois, allowed)
+        selected = self._route_order_ids(selected[:5])
+        alternatives = [
+            poi.id
+            for poi in sorted(pool_pois, key=lambda item: item.suitable_score, reverse=True)
+            if poi.id not in selected and allowed(poi)
+        ][:8]
+        return selected, alternatives
+
+    def _pool_pois(self, pool: PoolResponse | None) -> list[PoiInPool]:
+        if pool is None:
+            return []
+        return [poi for category in pool.categories for poi in category.pois]
+
+    def _feedback_avoid_categories(self, feedback_text: str) -> set[str]:
+        if any(keyword in feedback_text for keyword in ["不要商场", "不去商场", "别去商场", "少逛街"]):
+            return {"shopping"}
+        return set()
+
+    def _feedback_avoid_queue(self, feedback_text: str) -> bool:
+        return any(keyword in feedback_text for keyword in ["少排队", "不排队", "排队少", "别排队"])
+
+    def _ensure_route_mix(
+        self,
+        selected_ids: list[str],
+        pool_pois: list[PoiInPool],
+        allowed,
+    ) -> list[str]:
+        next_ids = list(dict.fromkeys(selected_ids))
+        by_id = {poi.id: poi for poi in pool_pois}
+        categories = {by_id[poi_id].category for poi_id in next_ids if poi_id in by_id}
+        if "restaurant" not in categories:
+            self._replace_or_append_best_pool_category(next_ids, pool_pois, {"restaurant"}, allowed)
+        categories = {by_id[poi_id].category for poi_id in next_ids if poi_id in by_id}
+        if not categories & self.EXPERIENCE_CATEGORIES:
+            self._replace_or_append_best_pool_category(next_ids, pool_pois, self.EXPERIENCE_CATEGORIES, allowed)
+        return next_ids
+
+    def _replace_or_append_best_pool_category(
+        self,
+        selected_ids: list[str],
+        pool_pois: list[PoiInPool],
+        categories: set[str],
+        allowed,
+    ) -> None:
+        replacement = next(
+            (
+                poi
+                for poi in sorted(pool_pois, key=lambda item: item.suitable_score, reverse=True)
+                if poi.category in categories and allowed(poi) and poi.id not in selected_ids
+            ),
+            None,
+        )
+        if replacement is None:
+            return
+        by_id = {poi.id: poi for poi in pool_pois}
+        for index in range(len(selected_ids) - 1, -1, -1):
+            selected = by_id.get(selected_ids[index])
+            if selected and selected.category not in {"restaurant", *self.EXPERIENCE_CATEGORIES}:
+                selected_ids[index] = replacement.id
+                return
+        selected_ids.append(replacement.id)
+
+    def _route_order_ids(self, poi_ids: list[str]) -> list[str]:
+        ids = list(dict.fromkeys(poi_ids))
+        if len(ids) < 3:
+            return ids
+        pois = self.repo.get_many(ids)
+        by_id = {poi.id: poi for poi in pois}
+        ordered_ids = [ids[0]]
+        remaining = [poi_id for poi_id in ids[1:] if poi_id in by_id]
+        while remaining:
+            current = by_id[ordered_ids[-1]]
+            next_id = min(remaining, key=lambda poi_id: haversine_meters(current, by_id[poi_id]))
+            ordered_ids.append(next_id)
+            remaining.remove(next_id)
+        return ordered_ids
 
     def _append_best_category(
         self,
