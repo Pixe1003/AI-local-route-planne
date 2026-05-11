@@ -32,26 +32,27 @@ class LlmClient:
             system_prompt or self.BASE_SYSTEM_PROMPT,
         )
         try:
+            payload = {
+                "model": settings.llm_model,
+                "messages": [
+                    {
+                        "role": "system",
+                        "content": system_content,
+                    },
+                    {"role": "user", "content": prompt},
+                ],
+                "temperature": 0.2,
+                "top_p": 0.95,
+                "stream": False,
+                "stop": None,
+                "frequency_penalty": 0,
+                "presence_penalty": 0,
+            }
+            payload[self._max_tokens_field(settings)] = 1024
             response = httpx.post(
                 f"{self._base_url(settings).rstrip('/')}/chat/completions",
                 headers=self._headers(settings),
-                json={
-                    "model": settings.llm_model,
-                    "messages": [
-                        {
-                            "role": "system",
-                            "content": system_content,
-                        },
-                        {"role": "user", "content": prompt},
-                    ],
-                    "max_completion_tokens": 1024,
-                    "temperature": 0.2,
-                    "top_p": 0.95,
-                    "stream": False,
-                    "stop": None,
-                    "frequency_penalty": 0,
-                    "presence_penalty": 0,
-                },
+                json=payload,
                 timeout=settings.llm_timeout_seconds,
             )
             response.raise_for_status()
@@ -63,11 +64,22 @@ class LlmClient:
     def _base_url(self, settings) -> str:
         if settings.llm_base_url:
             return settings.llm_base_url
-        if settings.llm_provider.lower() == "mimo":
+        provider = self._provider(settings)
+        if provider == "longcat":
+            return "https://api.longcat.chat/openai/v1"
+        if provider == "mimo":
             return "https://api.mimo-v2.com/v1"
-        if settings.llm_provider.lower() == "deepseek":
+        if provider == "deepseek":
             return "https://api.deepseek.com/v1"
         return "https://api.openai.com/v1"
+
+    def _max_tokens_field(self, settings) -> str:
+        if self._provider(settings) == "longcat":
+            return "max_tokens"
+        return "max_completion_tokens"
+
+    def _provider(self, settings) -> str:
+        return getattr(settings, "llm_provider", "").lower()
 
     def _headers(self, settings) -> dict[str, str]:
         auth_header = settings.llm_auth_header

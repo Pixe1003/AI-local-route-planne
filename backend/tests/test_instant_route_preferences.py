@@ -9,6 +9,7 @@ from app.services.plan_service import PlanService
 from app.services.poi_scoring_service import PoiScoringService
 from app.services.pool_service import PoolService
 from app.services.preference_service import PreferenceService
+from app.solver.distance import haversine_meters
 
 
 def test_ugc_feed_api_returns_demo_cards():
@@ -126,6 +127,39 @@ def test_instant_plan_uses_preferences_and_returns_alternatives():
     assert all("history_preference" in stop.score_breakdown for stop in main_plan.stops)
 
 
+def test_pool_default_selected_ids_are_system_ordered_by_nearby_route_distance():
+    repo = get_poi_repository()
+    snapshot = PreferenceService().build_snapshot(
+        PreferenceSnapshotRequest(
+            user_id="mock_user",
+            city="shanghai",
+            liked_poi_ids=["sh_poi_001", "sh_poi_008", "sh_poi_022"],
+        )
+    )
+
+    pool = PoolService().generate_pool(
+        PoolRequest(
+            user_id="mock_user",
+            city="shanghai",
+            date="2026-05-02",
+            time_window=TimeWindow(start="14:00", end="20:00"),
+            persona_tags=["foodie", "photographer"],
+            party="friends",
+            budget_per_person=180,
+            free_text="今天下午想少排队、吃本地菜、顺路拍照",
+            preference_snapshot=snapshot,
+        )
+    )
+
+    ordered = [repo.get(poi_id) for poi_id in pool.default_selected_ids]
+    assert len(ordered) >= 3
+    assert len({poi.id for poi in ordered}) == len(ordered)
+    for index, current in enumerate(ordered[:-1]):
+        remaining = ordered[index + 1 :]
+        nearest = min(remaining, key=lambda poi: haversine_meters(current, poi))
+        assert ordered[index + 1].id == nearest.id
+
+
 def test_low_budget_prompt_keeps_expensive_liked_poi_out_of_main_route():
     snapshot = PreferenceService().build_snapshot(
         PreferenceSnapshotRequest(
@@ -230,3 +264,54 @@ def test_structured_replace_stop_uses_alternative_and_keeps_plan_valid():
     updated = response.json()["updated_plan"]
     assert updated["stops"][replacement["replace_stop_index"]]["poi_id"] == replacement["poi_id"]
     assert updated["summary"]["validation"]["is_valid"] is True
+
+
+def test_chat_adjust_without_plan_updates_recommended_pois_for_amap_route():
+    client = TestClient(app)
+    repo = get_poi_repository()
+    snapshot = client.post(
+        "/api/preferences/snapshot",
+        json={
+            "user_id": "mock_user",
+            "city": "shanghai",
+            "liked_poi_ids": ["sh_poi_001", "sh_poi_008", "sh_poi_022"],
+        },
+    ).json()
+    pool = client.post(
+        "/api/pool/generate",
+        json={
+            "user_id": "mock_user",
+            "city": "shanghai",
+            "date": "2026-05-02",
+            "time_window": {"start": "14:00", "end": "20:00"},
+            "persona_tags": ["foodie", "photographer"],
+            "party": "friends",
+            "budget_per_person": 180,
+            "free_text": "今天下午想少排队、吃本地菜、顺路拍照",
+            "preference_snapshot": snapshot,
+        },
+    ).json()
+
+    response = client.post(
+        "/api/chat/adjust",
+        json={
+            "pool_id": pool["pool_id"],
+            "current_poi_ids": pool["default_selected_ids"],
+            "user_message": "少排队一点，不要商场",
+            "chat_history": [],
+            "city": "shanghai",
+            "date": "2026-05-02",
+            "time_window": {"start": "14:00", "end": "20:00"},
+            "free_text": "今天下午想少排队、吃本地菜、顺路拍照",
+            "preference_snapshot": snapshot,
+        },
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["updated_plan"] is None
+    assert data["recommended_poi_ids"]
+    assert len(data["recommended_poi_ids"]) >= 3
+    assert set(data["recommended_poi_ids"]).isdisjoint(set(data["alternative_poi_ids"]))
+    assert all(repo.get(poi_id).category != "shopping" for poi_id in data["recommended_poi_ids"])
+    assert max(repo.get(poi_id).queue_estimate["weekend_peak"] for poi_id in data["recommended_poi_ids"]) <= 45

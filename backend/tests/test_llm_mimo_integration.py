@@ -58,6 +58,47 @@ def test_llm_client_posts_mimo_openai_compatible_request(monkeypatch):
     assert captured["timeout"] == 12
 
 
+def test_llm_client_posts_longcat_openai_compatible_request(monkeypatch):
+    captured = {}
+
+    def fake_settings():
+        return SimpleNamespace(
+            llm_provider="longcat",
+            llm_api_key="test-longcat-key",
+            llm_base_url="",
+            llm_auth_header="authorization",
+            llm_model="LongCat-Flash-Chat",
+            llm_timeout_seconds=30,
+        )
+
+    class FakeResponse:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {"choices": [{"message": {"content": "{\"ok\": true}"}}]}
+
+    def fake_post(url, *, headers, json, timeout):
+        captured["url"] = url
+        captured["headers"] = headers
+        captured["json"] = json
+        captured["timeout"] = timeout
+        return FakeResponse()
+
+    monkeypatch.setattr("app.llm.client.get_settings", fake_settings)
+    monkeypatch.setattr("app.llm.client.httpx.post", fake_post)
+
+    result = LlmClient().complete_json("解析需求", {"fallback": True})
+
+    assert result == {"ok": True}
+    assert captured["url"] == "https://api.longcat.chat/openai/v1/chat/completions"
+    assert captured["headers"]["Authorization"] == "Bearer test-longcat-key"
+    assert captured["json"]["model"] == "LongCat-Flash-Chat"
+    assert captured["json"]["max_tokens"] == 1024
+    assert "max_completion_tokens" not in captured["json"]
+    assert captured["timeout"] == 30
+
+
 def test_onboarding_profile_uses_llm_profile_when_available(monkeypatch):
     def fake_complete_json(self, prompt, fallback, *, agent_name=None, system_prompt=None):
         assert "UserNeedProfile" in prompt

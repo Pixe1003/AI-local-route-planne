@@ -1,26 +1,52 @@
-# AI 本地路线智能规划系统
+# AIroute 本地路线推荐系统
 
-美团黑客松「现在就出发 · AI 本地路线智能规划」MVP。当前产品主线是：
+美团黑客松 Demo。当前产品主线是：
 
-`UGC 偏好冷启动 -> 一键即时路线 -> 备选 POI 调整 -> 对话重规划`
+`UGC 偏好冷启动 -> POI 推荐池 -> 系统排序 -> 高德真实路线 -> 反馈更新推荐 POI`
 
-项目不接真实用户隐私数据，用户历史偏好由首屏 UGC Feed 的收藏行为模拟。地图、距离和 LLM 能力都保留扩展接口；Demo 默认使用上海本地 mock 数据和确定性规划链路，保证快速、稳定、可解释。
+大模型只负责理解用户需求、辅助 POI 召回/解释和反馈更新；真实路线、距离、耗时、地图线统一由高德路线接口实现。
 
 ## 当前能力
 
-- UGC Feed 首屏：展示小红书/大众点评式内容卡片，用户收藏 POI 形成偏好。
-- 偏好快照：根据收藏 POI 生成标签、类别、关键词权重。
-- 即时路线：生成一条主路线，覆盖至少 3 个 POI，并包含餐饮与文化/娱乐/景点类 POI。
-- 多目标评分：综合用户提示词、收藏偏好、距离、预算、排队、评分和 UGC 证据。
-- 备选 POI：展示可替换地点，可一键替换路线中的某一站。
-- 对话重规划：支持少排队、省钱、下雨、少走路、压缩时间、替换备选等调整。
-- 兜底机制：LLM 或外部 API 不可用时，仍可用规则模板和本地距离估算生成路线。
+- UGC Feed：首页展示本地内容卡片，用户收藏/点赞形成偏好快照。
+- POI 推荐：结合提示词、UGC 偏好、预算、排队、类别覆盖、质量和距离惩罚输出有序 POI。
+- 高德路线：`POST /api/route/chain` 根据有序 POI 计算真实分段、总距离、总耗时和 GeoJSON。
+- 反馈调整：`POST /api/chat/adjust` 在无 `plan_id` 时更新推荐 POI，例如少排队、便宜一点、不要商场。
+- 可解释错误：缺少高德 Key、上游失败、未知 POI 会返回前端可展示的错误信息。
+
+旧的 `/api/plan/generate` 和 `/api/trips/*` 仅作为后端兼容接口保留，前端主链路不再使用。
 
 ## 技术栈
 
 - Backend: FastAPI, Pydantic, local seed POI/UGC data
 - Frontend: React, TypeScript, Vite, Zustand, axios, lucide-react
 - Tests: pytest, Vitest
+
+## 配置
+
+后端高德 Web Service Key：
+
+```powershell
+AMAP_WEB_SERVICE_KEY=your_amap_web_service_key
+AMAP_ROUTE_BASE_URL=https://restapi.amap.com
+AMAP_ROUTE_TIMEOUT_SECONDS=15
+```
+
+前端高德 JS API：
+
+```powershell
+VITE_AMAP_JS_KEY=your_amap_js_key
+VITE_AMAP_SECURITY_JS_CODE=your_amap_security_js_code
+```
+
+LLM 默认配置为 LongCat OpenAI-compatible API：
+
+```powershell
+LLM_PROVIDER=longcat
+LLM_BASE_URL=https://api.longcat.chat/openai/v1
+LLM_MODEL=LongCat-Flash-Chat
+LLM_API_KEY=your_longcat_api_key
+```
 
 ## 本地启动
 
@@ -50,7 +76,7 @@ npm run dev
 - `GET /api/ugc/feed`
 - `POST /api/preferences/snapshot`
 - `POST /api/pool/generate`
-- `POST /api/plan/generate`
+- `POST /api/route/chain`
 - `POST /api/chat/adjust`
 - `GET /api/meta/personas`
 - `GET /api/meta/cities`
