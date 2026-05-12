@@ -47,7 +47,7 @@ describe("preferenceStore", () => {
 
     expect(usePreferenceStore.getState().snapshotRequest("mock_user")).toEqual({
       user_id: "mock_user",
-      city: "shanghai",
+      city: "hefei",
       liked_poi_ids: ["sh_poi_001"],
       disliked_poi_ids: []
     })

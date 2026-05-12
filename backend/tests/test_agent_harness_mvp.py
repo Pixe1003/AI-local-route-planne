@@ -79,7 +79,12 @@ def test_route_validator_rejects_and_solver_repairs_over_time_routes():
     )
     invalid = RouteSkeleton(
         style="relaxed",
-        stops=SolverService().solve(intent, ["sh_poi_003", "sh_poi_010", "sh_poi_017", "sh_poi_024"])[0].stops,
+        stops=SolverService().solve(
+            intent,
+            ["sh_poi_003", "sh_poi_010", "sh_poi_017", "sh_poi_024"],
+            context=context,
+            profile=profile,
+        )[0].stops,
         dropped_poi_ids=[],
         drop_reasons={},
         metrics=RouteMetrics(
@@ -96,7 +101,12 @@ def test_route_validator_rejects_and_solver_repairs_over_time_routes():
     assert validation.is_valid is False
     assert any(issue.code == "time_budget_exceeded" for issue in validation.issues)
 
-    repaired = SolverService().solve(intent, ["sh_poi_003", "sh_poi_010", "sh_poi_017", "sh_poi_024"])[0]
+    repaired = SolverService().solve(
+        intent,
+        ["sh_poi_003", "sh_poi_010", "sh_poi_017", "sh_poi_024"],
+        context=context,
+        profile=profile,
+    )[0]
     repaired_validation = RouteValidator().validate(repaired, intent, context, profile)
     assert repaired_validation.is_valid is True
     assert repaired.metrics.total_duration_min <= 90
