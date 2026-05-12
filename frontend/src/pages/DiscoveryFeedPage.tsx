@@ -2,6 +2,7 @@ import { Clock3, Heart, MapPin, Route, Sparkles, Star, Trash2 } from "lucide-rea
 import { FormEvent, useEffect, useMemo, useState } from "react"
 import { useNavigate } from "react-router-dom"
 
+import { runAgentRoute } from "../api/agent"
 import { fetchUgcFeed } from "../api/ugc"
 import { useAmapRouteStore } from "../store/amapRouteStore"
 import { usePoolStore } from "../store/poolStore"
@@ -37,6 +38,7 @@ export function DiscoveryFeedPage() {
   const [start, setStart] = useState("14:00")
   const [end, setEnd] = useState("20:00")
   const [budget, setBudget] = useState(180)
+  const [agentLoading, setAgentLoading] = useState(false)
 
   useEffect(() => {
     fetchUgcFeed()
@@ -49,7 +51,7 @@ export function DiscoveryFeedPage() {
     [feed, likedPoiIds]
   )
 
-  const busy = preferenceLoading || poolLoading
+  const busy = preferenceLoading || poolLoading || agentLoading
 
   const buildProfile = (): UserNeedProfile => ({
     user_id: userId,
@@ -98,6 +100,42 @@ export function DiscoveryFeedPage() {
     if (!snapshot) return
     const profile = buildProfile()
     setNeedProfile(profile)
+    setAgentLoading(true)
+    try {
+      const agentResult = await runAgentRoute({
+        user_id: userId,
+        free_text: query,
+        city: "hefei",
+        date,
+        time_window: { start, end },
+        budget_per_person: budget,
+        preference_snapshot: snapshot
+      })
+      const routePoiIds = agentResult.ordered_poi_ids.length
+        ? agentResult.ordered_poi_ids
+        : agentResult.pool?.default_selected_ids ?? []
+      if (routePoiIds.length < 2) {
+        setFeedError("至少需要 2 个 POI 才能生成高德路线")
+        return
+      }
+      setRouteRequest({
+        mode: agentResult.route_chain?.mode ?? "driving",
+        poi_ids: routePoiIds,
+        source: "ugc_instant_route",
+        pool_id: agentResult.pool?.pool_id,
+        session_id: agentResult.session_id,
+        free_text: query,
+        date,
+        time_window: { start, end }
+      })
+      navigate("/route-map")
+      return
+    } catch (agentError) {
+      setFeedError(agentError instanceof Error ? agentError.message : "Agent 路线生成失败，已切换稳定模式")
+    } finally {
+      setAgentLoading(false)
+    }
+
     const pool = await fetchPool(poolRequest(profile, snapshot))
     if (!pool) return
     const routePoiIds = pool.default_selected_ids.slice(0, 5)

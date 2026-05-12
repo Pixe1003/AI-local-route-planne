@@ -68,6 +68,7 @@ export interface AmapRouteRequest {
   poi_ids: string[]
   source: "ugc_instant_route" | "manual_route"
   pool_id?: string
+  session_id?: string
   free_text?: string
   date?: string
   time_window?: {

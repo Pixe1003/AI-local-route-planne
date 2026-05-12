@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vitest"
 const mocks = vi.hoisted(() => ({
   navigate: vi.fn(),
   syncSnapshot: vi.fn(),
+  runAgentRoute: vi.fn(),
   fetchPool: vi.fn(),
   setNeedProfile: vi.fn(),
   setRouteRequest: vi.fn()
@@ -19,6 +20,10 @@ vi.mock("react-router-dom", async () => {
 
 vi.mock("../api/ugc", () => ({
   fetchUgcFeed: vi.fn().mockResolvedValue([])
+}))
+
+vi.mock("../api/agent", () => ({
+  runAgentRoute: (payload: unknown) => mocks.runAgentRoute(payload)
 }))
 
 vi.mock("../store/preferenceStore", () => ({
@@ -66,6 +71,24 @@ describe("DiscoveryFeedPage Amap route flow", () => {
       budget_range: null,
       updated_at: "2026-05-10T00:00:00Z"
     })
+    mocks.runAgentRoute.mockResolvedValue({
+      session_id: "agent_session_1",
+      trace_id: "trace_1",
+      phase: "DONE",
+      ordered_poi_ids: ["sh_poi_001", "sh_poi_002", "sh_poi_003"],
+      route_chain: null,
+      pool: {
+        pool_id: "pool_1",
+        categories: [],
+        default_selected_ids: ["sh_poi_001", "sh_poi_002", "sh_poi_003"],
+        meta: {
+          total_count: 3,
+          generated_at: "2026-05-10T00:00:00Z",
+          user_persona_summary: "demo"
+        }
+      },
+      steps: []
+    })
     mocks.fetchPool.mockResolvedValue({
       pool_id: "pool_1",
       categories: [],
@@ -83,11 +106,22 @@ describe("DiscoveryFeedPage Amap route flow", () => {
     fireEvent.submit(container.querySelector(".instant-panel") as HTMLFormElement)
 
     await waitFor(() => {
+      expect(mocks.runAgentRoute).toHaveBeenCalledWith(
+        expect.objectContaining({
+          user_id: "mock_user",
+          city: "hefei",
+          free_text: expect.stringContaining("少排队")
+        })
+      )
+    })
+    expect(mocks.fetchPool).not.toHaveBeenCalled()
+    await waitFor(() => {
       expect(mocks.setRouteRequest).toHaveBeenCalledWith(
         expect.objectContaining({
           mode: "driving",
           poi_ids: ["sh_poi_001", "sh_poi_002", "sh_poi_003"],
-          source: "ugc_instant_route"
+          source: "ugc_instant_route",
+          session_id: "agent_session_1"
         })
       )
     })

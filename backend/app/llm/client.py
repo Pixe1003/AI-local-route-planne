@@ -61,6 +61,61 @@ class LlmClient:
         except Exception:
             return fallback
 
+    def complete_tool_call(
+        self,
+        prompt: str,
+        *,
+        tools: list[dict[str, Any]],
+        fallback: dict[str, Any],
+    ) -> dict[str, Any]:
+        settings = get_settings()
+        if not settings.llm_api_key:
+            return fallback
+        try:
+            response = httpx.post(
+                f"{self._base_url(settings).rstrip('/')}/chat/completions",
+                headers=self._headers(settings),
+                json={
+                    "model": settings.llm_model,
+                    "messages": [
+                        {
+                            "role": "system",
+                            "content": "Choose exactly one tool. Return only a tool call.",
+                        },
+                        {"role": "user", "content": prompt},
+                    ],
+                    "tools": [
+                        {
+                            "type": "function",
+                            "function": {
+                                "name": tool["name"],
+                                "description": tool.get("description", ""),
+                                "parameters": tool.get("parameters", {"type": "object"}),
+                            },
+                        }
+                        for tool in tools
+                    ],
+                    "tool_choice": "auto",
+                    "temperature": 0.0,
+                    "stream": False,
+                },
+                timeout=settings.llm_timeout_seconds,
+            )
+            response.raise_for_status()
+            message = response.json()["choices"][0]["message"]
+            tool_calls = message.get("tool_calls") or []
+            if not tool_calls:
+                return fallback
+            function = tool_calls[0].get("function") or {}
+            tool_name = function.get("name")
+            raw_args = function.get("arguments") or "{}"
+            args = json.loads(raw_args) if isinstance(raw_args, str) else raw_args
+            if isinstance(tool_name, str) and isinstance(args, dict):
+                return {"tool": tool_name, "args": args}
+        except Exception:
+            return fallback
+        return fallback
+
     def _base_url(self, settings) -> str:
         if settings.llm_base_url:
             return settings.llm_base_url

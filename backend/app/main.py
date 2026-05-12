@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api import (
     routes_chat,
+    routes_agent,
     routes_meta,
     routes_onboarding,
     routes_plan,
@@ -27,6 +28,7 @@ app.add_middleware(
 )
 
 app.include_router(routes_pool.router, prefix="/api")
+app.include_router(routes_agent.router, prefix="/api")
 app.include_router(routes_plan.router, prefix="/api")
 app.include_router(routes_chat.router, prefix="/api")
 app.include_router(routes_meta.router, prefix="/api")

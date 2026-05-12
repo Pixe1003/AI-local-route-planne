@@ -20,6 +20,7 @@ class Settings(BaseSettings):
     amap_web_service_key: str = ""
     amap_route_base_url: str = "https://restapi.amap.com"
     amap_route_timeout_seconds: float = 15.0
+    agent_tool_calling_enabled: bool = False
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
