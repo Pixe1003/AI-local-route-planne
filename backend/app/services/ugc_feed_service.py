@@ -19,10 +19,10 @@ class UgcFeedService:
     def __init__(self) -> None:
         self.repo = get_poi_repository()
 
-    def list_feed(self, city: str = "shanghai", limit: int = 24) -> list[UgcFeedItem]:
+    def list_feed(self, city: str = "hefei", limit: int = 24) -> list[UgcFeedItem]:
         pois = self.repo.list_by_city(city)
-        if not pois and city != "shanghai":
-            pois = self.repo.list_by_city("shanghai")
+        if not pois and city != "hefei":
+            pois = self.repo.list_by_city("hefei")
         cards: list[UgcFeedItem] = []
         for index, poi in enumerate(pois[:limit]):
             quote = poi.highlight_quotes[0].quote if poi.highlight_quotes else f"{poi.name}体验稳定。"

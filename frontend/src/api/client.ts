@@ -8,7 +8,20 @@ export function getApiErrorMessage(error: unknown): string {
       const detail = (data as { detail?: unknown }).detail
       if (typeof detail === "object" && detail !== null && "message" in detail) {
         const message = (detail as { message?: unknown }).message
-        if (typeof message === "string" && message.trim()) return message
+        if (typeof message === "string" && message.trim()) {
+          const parts = [message]
+          const info = (detail as { info?: unknown }).info
+          const infocode = (detail as { infocode?: unknown }).infocode
+          const segmentIndex = (detail as { segment_index?: unknown }).segment_index
+          const fromPoiName = (detail as { from_poi_name?: unknown }).from_poi_name
+          const toPoiName = (detail as { to_poi_name?: unknown }).to_poi_name
+          if (typeof info === "string" && info.trim()) parts.push(`info: ${info}`)
+          if (typeof infocode === "string" && infocode.trim()) parts.push(`infocode: ${infocode}`)
+          if (typeof segmentIndex === "number" && typeof fromPoiName === "string" && typeof toPoiName === "string") {
+            parts.push(`segment ${segmentIndex}: ${fromPoiName} -> ${toPoiName}`)
+          }
+          return parts.join(" / ")
+        }
       }
       if (typeof detail === "string" && detail.trim()) return detail
     }

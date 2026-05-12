@@ -4,7 +4,7 @@ from pydantic import BaseModel, Field
 
 
 class DestinationProfile(BaseModel):
-    city: str = "shanghai"
+    city: str = "hefei"
     start_location: Optional[str] = None
     target_area: Optional[str] = None
     end_location: Optional[str] = None
@@ -59,7 +59,7 @@ class UserNeedProfile(BaseModel):
         from app.schemas.pool import TimeWindow
 
         return PlanContext(
-            city=self.destination.city or "shanghai",
+            city=self.destination.city or "hefei",
             date=self.date,
             time_window=TimeWindow(
                 start=self.time.start_time or "13:00",

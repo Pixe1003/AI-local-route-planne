@@ -97,11 +97,13 @@ UserNeedProfile 字段：
             return fallback
 
     def _destination_from_text(self, text: str) -> DestinationProfile:
-        city = "shanghai"
+        city = "hefei"
         if "南京" in text:
             city = "nanjing"
         elif "上海" in text:
             city = "shanghai"
+        elif "合肥" in text:
+            city = "hefei"
         start_location = None
         start_match = re.search(r"从([^，,。]+?)出发", text)
         if start_match:

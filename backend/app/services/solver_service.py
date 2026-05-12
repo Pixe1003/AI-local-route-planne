@@ -25,7 +25,7 @@ class SolverService:
         profile: UserNeedProfile | None = None,
         preference_snapshot: PreferenceSnapshot | None = None,
     ) -> list[RouteSkeleton]:
-        ids = self._ensure_minimum_candidates(candidate_poi_ids, context.city if context else "shanghai")
+        ids = self._ensure_minimum_candidates(candidate_poi_ids, context.city if context else "hefei")
         repairer = RouteRepairer()
         return [
             repairer.repair(
@@ -40,7 +40,7 @@ class SolverService:
 
     def _ensure_minimum_candidates(self, candidate_poi_ids: list[str], city: str) -> list[str]:
         ids = list(dict.fromkeys(candidate_poi_ids))
-        city_pois = self.repo.list_by_city(city) or self.repo.list_by_city("shanghai")
+        city_pois = self.repo.list_by_city(city) or self.repo.list_by_city("hefei")
         categories = {self.repo.get(poi_id).category for poi_id in ids if poi_id in {poi.id for poi in city_pois}}
         if "restaurant" not in categories:
             self._append_first_category(ids, city_pois, {"restaurant"})

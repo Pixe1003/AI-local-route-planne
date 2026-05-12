@@ -86,7 +86,7 @@ class TripService:
             version.plans[0],
         )
         cover_poi_names = [stop.poi_name for stop in active_plan.stops[:3]]
-        city = profile.destination.city or "shanghai"
+        city = profile.destination.city or "hefei"
         start_location = profile.destination.start_location
         party = profile.party_type or "friends"
         title_parts = [self._city_label(city), profile.date]
@@ -105,7 +105,7 @@ class TripService:
         )
 
     def _city_label(self, city: str) -> str:
-        return {"shanghai": "上海", "nanjing": "南京"}.get(city, city)
+        return {"hefei": "合肥", "shanghai": "上海", "nanjing": "南京"}.get(city, city)
 
     def _party_label(self, party: str) -> str:
         return {

@@ -1,4 +1,4 @@
-import { Clock3, Heart, MapPin, Route, Sparkles, Star } from "lucide-react"
+import { Clock3, Heart, MapPin, Route, Sparkles, Star, Trash2 } from "lucide-react"
 import { FormEvent, useEffect, useMemo, useState } from "react"
 import { useNavigate } from "react-router-dom"
 
@@ -26,7 +26,7 @@ const categoryLabels: Record<string, string> = {
 export function DiscoveryFeedPage() {
   const navigate = useNavigate()
   const { userId, setNeedProfile } = useUserStore()
-  const { likedPoiIds, isLiked, toggleLike, syncSnapshot, loading: preferenceLoading } = usePreferenceStore()
+  const { likedPoiIds, isLiked, toggleLike, syncSnapshot, clearLikes, loading: preferenceLoading } = usePreferenceStore()
   const { fetchPool, loading: poolLoading, error: poolError } = usePoolStore()
   const { setRouteRequest } = useAmapRouteStore()
   const [feed, setFeed] = useState<UgcFeedItem[]>([])
@@ -54,9 +54,9 @@ export function DiscoveryFeedPage() {
   const buildProfile = (): UserNeedProfile => ({
     user_id: userId,
     destination: {
-      city: "shanghai",
-      start_location: "人民广场",
-      target_area: "上海核心城区",
+      city: "hefei",
+      start_location: "合肥市中心",
+      target_area: "合肥核心城区",
       end_location: null
     },
     time: {
@@ -80,7 +80,7 @@ export function DiscoveryFeedPage() {
 
   const poolRequest = (profile: UserNeedProfile, snapshot: PreferenceSnapshot): PoolRequest => ({
     user_id: userId,
-    city: "shanghai",
+    city: "hefei",
     date,
     time_window: { start, end },
     persona_tags: ["foodie", "photographer"],
@@ -94,7 +94,7 @@ export function DiscoveryFeedPage() {
 
   const submit = async (event: FormEvent) => {
     event.preventDefault()
-    const snapshot = await syncSnapshot(userId, "shanghai")
+    const snapshot = await syncSnapshot(userId, "hefei")
     if (!snapshot) return
     const profile = buildProfile()
     setNeedProfile(profile)
@@ -128,12 +128,24 @@ export function DiscoveryFeedPage() {
       </section>
 
       <section className="liked-strip">
-        <strong>已收藏 {likedPoiIds.length} 个</strong>
-        <span>
-          {likedItems.length
-            ? likedItems.map(item => item.poi_name).slice(0, 4).join(" / ")
-            : "先刷几张 UGC 卡片，也可以直接规划"}
-        </span>
+        <div>
+          <strong>已收藏 {likedPoiIds.length} 个</strong>
+          <span>
+            {likedItems.length
+              ? likedItems.map(item => item.poi_name).slice(0, 4).join(" / ")
+              : "先刷几张 UGC 卡片，也可以直接规划"}
+          </span>
+        </div>
+        <button
+          className="clear-likes-button"
+          disabled={!likedPoiIds.length}
+          onClick={clearLikes}
+          title="清空收藏"
+          type="button"
+        >
+          <Trash2 size={16} />
+          清零
+        </button>
       </section>
 
       {feedError ? <p className="error-text">{feedError}</p> : null}

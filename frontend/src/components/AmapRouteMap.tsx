@@ -8,7 +8,7 @@ interface AmapRouteMapProps {
   geojson: GeoJSONFeatureCollection | null
 }
 
-const SHANGHAI_CENTER: [number, number] = [121.4737, 31.2304]
+const HEFEI_CENTER: [number, number] = [117.2272, 31.8206]
 
 export function AmapRouteMap({ pois, geojson }: AmapRouteMapProps) {
   const containerRef = useRef<HTMLDivElement | null>(null)
@@ -20,7 +20,7 @@ export function AmapRouteMap({ pois, geojson }: AmapRouteMapProps) {
   const securityJsCode = import.meta.env.VITE_AMAP_SECURITY_JS_CODE
   const center = useMemo<[number, number]>(() => {
     const firstPoi = pois[0]
-    return firstPoi ? [firstPoi.longitude, firstPoi.latitude] : SHANGHAI_CENTER
+    return firstPoi ? [firstPoi.longitude, firstPoi.latitude] : HEFEI_CENTER
   }, [pois])
 
   useEffect(() => {
@@ -58,36 +58,35 @@ export function AmapRouteMap({ pois, geojson }: AmapRouteMapProps) {
   }, [center, jsKey, securityJsCode])
 
   useEffect(() => {
-    if (!mapRef.current || !window.AMap) return
+    if (status !== "ready" || !mapRef.current || !window.AMap) return
 
     overlaysRef.current.forEach(overlay => overlay.setMap(null))
     const overlays: AMapOverlayInstance[] = []
     pois.forEach((poi, index) => {
       overlays.push(
         new window.AMap!.Marker({
-          map: mapRef.current ?? undefined,
           position: [poi.longitude, poi.latitude],
           title: poi.name,
-          content: `<div class="amap-route-marker">${index + 1}</div>`
+          content: `<div class="amap-route-marker" title="${escapeHtml(poi.name)}">${index + 1}</div>`,
+          zIndex: 120 + index
         })
       )
     })
-    geojson?.features.forEach(feature => {
-      if (feature.geometry.coordinates.length < 2) return
+    routePaths(geojson).forEach(path => {
       overlays.push(
         new window.AMap!.Polyline({
-          map: mapRef.current ?? undefined,
-          path: feature.geometry.coordinates,
-          strokeColor: "#1677ff",
-          strokeOpacity: 0.92,
-          strokeWeight: 6,
+          path,
+          strokeColor: "#0b6bff",
+          strokeOpacity: 0.95,
+          strokeWeight: 8,
           lineJoin: "round",
-          zIndex: 20
+          zIndex: 80
         })
       )
     })
     overlaysRef.current = overlays
     if (overlays.length) {
+      mapRef.current.add(overlays)
       mapRef.current.setFitView(overlays)
     }
   }, [geojson, pois, status])
@@ -112,4 +111,31 @@ export function AmapRouteMap({ pois, geojson }: AmapRouteMapProps) {
       ) : null}
     </div>
   )
+}
+
+function routePaths(geojson: GeoJSONFeatureCollection | null): [number, number][][] {
+  if (!geojson?.features.length) return []
+  const bySegment = new Map<number, [number, number][]>()
+  geojson.features.forEach(feature => {
+    const coordinates = feature.geometry.coordinates
+    if (coordinates.length < 2) return
+    const segmentIndex = feature.properties.segment_index
+    const path = bySegment.get(segmentIndex) ?? []
+    coordinates.forEach(coordinate => {
+      const previous = path[path.length - 1]
+      if (!previous || previous[0] !== coordinate[0] || previous[1] !== coordinate[1]) {
+        path.push(coordinate)
+      }
+    })
+    bySegment.set(segmentIndex, path)
+  })
+  return Array.from(bySegment.values()).filter(path => path.length >= 2)
+}
+
+function escapeHtml(value: string): string {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
 }

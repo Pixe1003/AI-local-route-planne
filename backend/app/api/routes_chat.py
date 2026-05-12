@@ -18,7 +18,7 @@ class ChatAdjustRequest(BaseModel):
     action_type: str | None = None
     target_stop_index: int | None = None
     replacement_poi_id: str | None = None
-    city: str = "shanghai"
+    city: str = "hefei"
     date: str = "2026-05-02"
     time_window: TimeWindow | None = None
     free_text: str | None = None

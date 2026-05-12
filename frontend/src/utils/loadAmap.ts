@@ -9,6 +9,7 @@ export type AMapOverlayInstance = {
 }
 
 export type AMapMapInstance = {
+  add: (overlays: AMapOverlayInstance | AMapOverlayInstance[]) => void
   destroy: () => void
   setFitView: (overlays?: AMapOverlayInstance[]) => void
 }
@@ -18,6 +19,7 @@ type AMapMarkerOptions = {
   position: [number, number]
   title?: string
   content?: string | HTMLElement
+  zIndex?: number
 }
 
 type AMapPolylineOptions = {
