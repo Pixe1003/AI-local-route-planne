@@ -60,13 +60,13 @@ export const usePreferenceStore = create<PreferenceStore>((set, get) => ({
     persist(likedPoiIds, likedItems)
     set({ likedPoiIds, likedItems, snapshot: null })
   },
-  snapshotRequest: (userId, city = "shanghai") => ({
+  snapshotRequest: (userId, city = "hefei") => ({
     user_id: userId,
     city,
     liked_poi_ids: get().likedPoiIds,
     disliked_poi_ids: []
   }),
-  syncSnapshot: async (userId, city = "shanghai") => {
+  syncSnapshot: async (userId, city = "hefei") => {
     set({ loading: true, error: null })
     try {
       const snapshot = await buildPreferenceSnapshot(get().snapshotRequest(userId, city))

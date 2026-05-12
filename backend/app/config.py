@@ -7,7 +7,7 @@ class Settings(BaseSettings):
     app_name: str = "local-route-agent"
     app_port: int = 8000
     frontend_port: int = 5173
-    default_city: str = "shanghai"
+    default_city: str = "hefei"
     llm_provider: str = "longcat"
     llm_api_key: str = ""
     llm_model: str = "LongCat-Flash-Chat"

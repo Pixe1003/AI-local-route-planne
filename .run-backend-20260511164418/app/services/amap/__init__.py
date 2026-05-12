@@ -1,0 +1,1 @@
+"""Amap route service integration."""

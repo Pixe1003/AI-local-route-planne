@@ -66,7 +66,7 @@ export function AmapRoutePage() {
         current_poi_ids: routeRequest.poi_ids,
         user_message: feedback.trim(),
         chat_history: [],
-        city: "shanghai",
+        city: "hefei",
         date: routeRequest.date,
         time_window: routeRequest.time_window ?? null,
         free_text: routeRequest.free_text

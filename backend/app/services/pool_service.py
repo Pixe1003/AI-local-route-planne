@@ -52,8 +52,8 @@ class PoolService:
         )
         city = profile.destination.city if profile else request.city
         candidates = self.repo.list_by_city(city)
-        if not candidates and city != "shanghai":
-            candidates = self.repo.list_by_city("shanghai")
+        if not candidates and city != "hefei":
+            candidates = self.repo.list_by_city("hefei")
         scored = sorted(
             (
                 (
@@ -223,7 +223,7 @@ class PoolService:
                     suitable_score=poi.rating / 5,
                     score_breakdown={},
                 )
-                for poi in self.repo.list_by_city("shanghai")
+                for poi in self.repo.list_by_city("hefei")
             ]
         by_id = {poi.id: poi for poi in pool_pois}
         avoid_categories = self._feedback_avoid_categories(feedback_text)

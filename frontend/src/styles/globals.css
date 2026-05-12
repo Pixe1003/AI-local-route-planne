@@ -172,6 +172,7 @@ textarea {
 .liked-strip {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 12px;
   margin-bottom: 18px;
   padding: 12px 14px;
@@ -180,12 +181,46 @@ textarea {
   background: #ffffff;
 }
 
+.liked-strip > div {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
 .liked-strip strong {
+  flex: 0 0 auto;
   color: #1677ff;
 }
 
 .liked-strip span {
+  min-width: 0;
+  overflow: hidden;
   color: #5e6980;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.clear-likes-button {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 34px;
+  padding: 0 11px;
+  border: 1px solid #ffd4d4;
+  border-radius: 8px;
+  color: #c93232;
+  background: #fff5f5;
+  font-weight: 800;
+}
+
+.clear-likes-button:disabled {
+  border-color: #e5eaf2;
+  color: #9aa4b5;
+  background: #f5f7fb;
+  cursor: not-allowed;
 }
 
 .ugc-feed-grid {
@@ -408,6 +443,8 @@ textarea {
   color: #ffffff;
   background: #d45500;
   font-weight: 900;
+  line-height: 1;
+  transform: translate(-15px, -15px);
   box-shadow: 0 8px 20px rgba(32, 45, 73, 0.28);
 }
 

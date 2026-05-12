@@ -295,7 +295,7 @@ class PlanService:
         if request.need_profile:
             return request.need_profile.to_plan_context()
         return PlanContext(
-            city="shanghai",
+            city="hefei",
             date="2026-05-02",
             time_window={"start": "13:00", "end": "21:00"},
             party="friends",

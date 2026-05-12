@@ -33,7 +33,7 @@ def personas() -> list[dict[str, str]]:
 
 @router.get("/meta/cities")
 def cities() -> list[dict[str, str]]:
-    return [{"value": "shanghai", "label": "上海"}]
+    return [{"value": "hefei", "label": "合肥"}]
 
 
 @router.get("/poi/{poi_id}")

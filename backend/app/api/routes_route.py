@@ -43,6 +43,20 @@ def create_route_chain(payload: RouteChainRequest) -> RouteChainResponse:
                 "code": "AMAP_CONFIG_MISSING",
             },
         ) from exc
+    except RouteSegmentUpstreamError as exc:
+        raise HTTPException(
+            status_code=502,
+            detail={
+                "message": "Amap upstream route service returned an error.",
+                "info": exc.info,
+                "infocode": exc.infocode,
+                "segment_index": exc.segment_index,
+                "from_poi_id": exc.from_poi.id,
+                "from_poi_name": exc.from_poi.name,
+                "to_poi_id": exc.to_poi.id,
+                "to_poi_name": exc.to_poi.name,
+            },
+        ) from exc
     except AmapUpstreamError as exc:
         raise HTTPException(
             status_code=502,
@@ -74,12 +88,22 @@ def build_route_chain(
     features: list[GeoJSONFeature] = []
 
     for segment_index, (from_poi, to_poi) in enumerate(_pairwise(route_pois), start=1):
-        result = _get_route_with_retry(
-            client=client,
-            mode=payload.mode,
-            origin=AmapLngLat(longitude=from_poi.longitude, latitude=from_poi.latitude),
-            destination=AmapLngLat(longitude=to_poi.longitude, latitude=to_poi.latitude),
-        )
+        try:
+            result = _get_route_with_retry(
+                client=client,
+                mode=payload.mode,
+                origin=AmapLngLat(longitude=from_poi.longitude, latitude=from_poi.latitude),
+                destination=AmapLngLat(longitude=to_poi.longitude, latitude=to_poi.latitude),
+            )
+        except AmapUpstreamError as exc:
+            raise RouteSegmentUpstreamError(
+                segment_index=segment_index,
+                from_poi=from_poi,
+                to_poi=to_poi,
+                info=exc.info,
+                infocode=exc.infocode,
+                raw_response=exc.raw_response,
+            ) from exc
         segment_duration_s = result.duration_s or 0.0
         total_distance_m += result.distance_m
         total_duration_s += segment_duration_s
@@ -193,3 +217,20 @@ def _step_features(
 def _pairwise(pois: Iterable[RoutePoi]) -> Iterable[tuple[RoutePoi, RoutePoi]]:
     poi_list = list(pois)
     return zip(poi_list, poi_list[1:])
+
+
+class RouteSegmentUpstreamError(AmapUpstreamError):
+    def __init__(
+        self,
+        *,
+        segment_index: int,
+        from_poi: RoutePoi,
+        to_poi: RoutePoi,
+        info: str | None,
+        infocode: str | None,
+        raw_response: dict | None = None,
+    ) -> None:
+        super().__init__(info=info, infocode=infocode, raw_response=raw_response)
+        self.segment_index = segment_index
+        self.from_poi = from_poi
+        self.to_poi = to_poi
