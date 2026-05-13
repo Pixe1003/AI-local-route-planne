@@ -20,7 +20,8 @@ class PoiRepository:
         if DEFAULT_POI_DB_PATH.exists():
             pois = self._load_sqlite_pois(DEFAULT_POI_DB_PATH)
             if pois:
-                return pois
+                seed_pois = {poi.id: poi for poi in load_seed_pois()}
+                return {**seed_pois, **pois}
         return {poi.id: poi for poi in load_seed_pois()}
 
     def _load_sqlite_pois(self, db_path: Path) -> dict[str, PoiDetail]:
