@@ -1,3 +1,6 @@
+import type { StoryPlan } from "./story"
+import type { AgentToolCall } from "./agent"
+
 export type RouteMode = "walking" | "driving"
 
 export interface RoutePoi {
@@ -69,6 +72,8 @@ export interface AmapRouteRequest {
   source: "ugc_instant_route" | "manual_route"
   pool_id?: string
   session_id?: string
+  story_plan?: StoryPlan | null
+  agent_steps?: AgentToolCall[]
   free_text?: string
   date?: string
   time_window?: {

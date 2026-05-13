@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 
-import { getApiErrorMessage } from "../api/client"
+import { apiClient, getApiErrorMessage } from "../api/client"
 
 describe("apiClient error handling", () => {
   it("extracts backend detail.message instead of returning a generic Axios failure", () => {
@@ -17,5 +17,9 @@ describe("apiClient error handling", () => {
     expect(message).toBe(
       "Amap route client is not configured. Set AMAP_WEB_SERVICE_KEY or AMAP_KEY."
     )
+  })
+
+  it("does not impose a frontend timeout on long-running agent requests", () => {
+    expect(apiClient.defaults.timeout).toBe(0)
   })
 })

@@ -35,12 +35,20 @@ export function AmapRouteMap({ pois, geojson }: AmapRouteMapProps) {
       .then(AMap => {
         if (cancelled || !containerRef.current) return
         mapRef.current?.destroy()
-        mapRef.current = new AMap.Map(containerRef.current, {
+        const map = new AMap.Map(containerRef.current, {
           center,
           zoom: 12,
           viewMode: "2D"
         })
-        setStatus("ready")
+        mapRef.current = map
+        const markReady = () => {
+          if (!cancelled) setStatus("ready")
+        }
+        if (typeof map.on === "function") {
+          map.on("complete", markReady)
+        } else {
+          markReady()
+        }
       })
       .catch(loadError => {
         if (cancelled) return
@@ -62,9 +70,11 @@ export function AmapRouteMap({ pois, geojson }: AmapRouteMapProps) {
 
     overlaysRef.current.forEach(overlay => overlay.setMap(null))
     const overlays: AMapOverlayInstance[] = []
+    const map = mapRef.current
     pois.forEach((poi, index) => {
       overlays.push(
         new window.AMap!.Marker({
+          map,
           position: [poi.longitude, poi.latitude],
           title: poi.name,
           content: `<div class="amap-route-marker" title="${escapeHtml(poi.name)}">${index + 1}</div>`,
@@ -75,6 +85,7 @@ export function AmapRouteMap({ pois, geojson }: AmapRouteMapProps) {
     routePaths(geojson).forEach(path => {
       overlays.push(
         new window.AMap!.Polyline({
+          map,
           path,
           strokeColor: "#0b6bff",
           strokeOpacity: 0.95,
@@ -86,8 +97,7 @@ export function AmapRouteMap({ pois, geojson }: AmapRouteMapProps) {
     })
     overlaysRef.current = overlays
     if (overlays.length) {
-      mapRef.current.add(overlays)
-      mapRef.current.setFitView(overlays)
+      map.setFitView(overlays)
     }
   }, [geojson, pois, status])
 

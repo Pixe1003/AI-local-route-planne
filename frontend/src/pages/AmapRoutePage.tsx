@@ -2,8 +2,10 @@ import { ArrowLeft, Clock3, MapPin, Route } from "lucide-react"
 import { FormEvent, useEffect, useMemo, useState } from "react"
 import { useNavigate } from "react-router-dom"
 
+import { adjustAgentRoute } from "../api/agent"
 import { adjustRouteRecommendation } from "../api/chat"
 import { createRouteChain } from "../api/route"
+import { AgentThinkingPanel } from "../components/AgentThinkingPanel"
 import { AmapRouteMap } from "../components/AmapRouteMap"
 import { useAmapRouteStore } from "../store/amapRouteStore"
 import type { RouteChainResponse } from "../types/route"
@@ -47,13 +49,19 @@ export function AmapRoutePage() {
     }
   }, [routeRequest])
 
+  const storyPlan = routeRequest?.story_plan ?? null
+  const storyByPoiId = useMemo(
+    () => new Map((storyPlan?.stops ?? []).map(stop => [stop.poi_id, stop])),
+    [storyPlan]
+  )
   const orderedPois = routeResult?.ordered_pois ?? []
   const totalDistance = routeResult ? formatDistance(routeResult.total_distance_m) : "--"
   const totalDuration = routeResult ? formatDuration(routeResult.total_duration_s) : "--"
   const pageTitle = useMemo(() => {
+    if (storyPlan?.theme) return storyPlan.theme
     if (!routeResult?.ordered_pois.length) return "高德路线规划"
     return routeResult.ordered_pois.map(poi => poi.name).slice(0, 3).join(" → ")
-  }, [routeResult])
+  }, [routeResult, storyPlan])
 
   const submitFeedback = async (event: FormEvent) => {
     event.preventDefault()
@@ -61,6 +69,30 @@ export function AmapRoutePage() {
     setFeedbackLoading(true)
     setError(null)
     try {
+      if (routeRequest.session_id) {
+        const response = await adjustAgentRoute({
+          parent_session_id: routeRequest.session_id,
+          user_message: feedback.trim()
+        })
+        const nextPoiIds = response.ordered_poi_ids.length
+          ? response.ordered_poi_ids
+          : response.pool?.default_selected_ids ?? []
+        if (nextPoiIds.length >= 2) {
+          setRouteRequest({
+            ...routeRequest,
+            poi_ids: nextPoiIds,
+            session_id: response.session_id,
+            story_plan: response.story_plan ?? routeRequest.story_plan ?? null,
+            agent_steps: response.steps,
+            free_text: routeRequest.free_text
+              ? `${routeRequest.free_text}；${feedback.trim()}`
+              : feedback.trim()
+          })
+        }
+        setFeedbackMessage("已由 Agent 根据反馈更新路线")
+        setFeedback("")
+        return
+      }
       const response = await adjustRouteRecommendation({
         pool_id: routeRequest.pool_id,
         current_poi_ids: routeRequest.poi_ids,
@@ -118,7 +150,7 @@ export function AmapRoutePage() {
         <div className="amap-route-heading">
           <span className="eyebrow">高德真实路线</span>
           <h1>{pageTitle}</h1>
-          <p>{routeRequest.free_text ?? "基于 UGC 偏好和推荐池 POI 生成路线。"}</p>
+          <p>{storyPlan?.narrative ?? routeRequest.free_text ?? "基于 UGC 偏好和推荐池 POI 生成路线。"}</p>
         </div>
 
         <div className="route-summary-grid">
@@ -147,6 +179,8 @@ export function AmapRoutePage() {
           </div>
         ) : null}
         {error ? <p className="route-panel-alert error">{error}</p> : null}
+
+        <AgentThinkingPanel steps={routeRequest.agent_steps ?? []} />
 
         <form className="route-feedback-form" data-testid="route-feedback-form" onSubmit={submitFeedback}>
           <label>
@@ -177,6 +211,12 @@ export function AmapRoutePage() {
                       <MapPin size={13} />
                       {poi.category ?? "POI"}
                     </small>
+                    {storyByPoiId.get(poi.id) ? (
+                      <div className="route-story-evidence">
+                        <p>{storyByPoiId.get(poi.id)?.why}</p>
+                        <blockquote>{storyByPoiId.get(poi.id)?.ugc_quote}</blockquote>
+                      </div>
+                    ) : null}
                   </div>
                 </li>
               ))}

@@ -67,7 +67,7 @@ def test_llm_client_posts_longcat_openai_compatible_request(monkeypatch):
             llm_api_key="test-longcat-key",
             llm_base_url="",
             llm_auth_header="authorization",
-            llm_model="LongCat-Flash-Chat",
+            llm_model="longcat-max",
             llm_timeout_seconds=30,
         )
 
@@ -91,9 +91,9 @@ def test_llm_client_posts_longcat_openai_compatible_request(monkeypatch):
     result = LlmClient().complete_json("解析需求", {"fallback": True})
 
     assert result == {"ok": True}
-    assert captured["url"] == "https://api.longcat.chat/openai/v1/chat/completions"
+    assert captured["url"] == "https://api.longcat.ai/v1/chat/completions"
     assert captured["headers"]["Authorization"] == "Bearer test-longcat-key"
-    assert captured["json"]["model"] == "LongCat-Flash-Chat"
+    assert captured["json"]["model"] == "longcat-max"
     assert captured["json"]["max_tokens"] == 1024
     assert "max_completion_tokens" not in captured["json"]
     assert captured["timeout"] == 30

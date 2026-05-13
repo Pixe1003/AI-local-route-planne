@@ -1,9 +1,13 @@
 from app.schemas.onboarding import UserNeedProfile
 from app.schemas.plan import PlanContext, ScoreBreakdown, StructuredIntent
 from app.schemas.preferences import PreferenceSnapshot
+from app.repositories.ugc_vector_repo import UgcVectorRepo, get_ugc_vector_repo
 
 
 class PoiScoringService:
+    def __init__(self, ugc_repo: UgcVectorRepo | None = None) -> None:
+        self.ugc_repo = ugc_repo or get_ugc_vector_repo()
+
     def score_poi(
         self,
         poi,
@@ -87,6 +91,11 @@ class PoiScoringService:
 
     def _ugc_match_score(self, poi, text: str) -> float:
         score = 6.0
+        hits = self.ugc_repo.evidence_for_poi(poi.id, text, top_k=3)
+        if hits:
+            best_hit = max(hits, key=lambda hit: hit.score)
+            score += min(best_hit.score, 10.0)
+
         keyword_text = " ".join(str(item["keyword"]) for item in poi.high_freq_keywords)
         combined = f"{keyword_text} {' '.join(poi.tags)}"
         if "本地" in text and "本地口味" in combined:

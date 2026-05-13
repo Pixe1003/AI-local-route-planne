@@ -11,32 +11,19 @@ async function expectNoHorizontalOverflow(page: import("@playwright/test").Page)
   expect(noHorizontalOverflow).toBeTruthy()
 }
 
-test("mobile user can create a trip, save a route version, and open details without layout overflow", async ({ page }) => {
+test("mobile UGC onboarding can open instant route controls without layout overflow", async ({ page }) => {
   await page.goto("/")
 
-  await expect(page.getByRole("heading", { name: "我的行程" })).toBeVisible()
-  await page.getByRole("button", { name: "新建行程" }).click()
-
-  await expect(page.getByRole("heading", { name: "新建行程" })).toBeVisible()
-  await expect(page.getByRole("button", { name: /进入推荐池/ })).toBeVisible()
+  await expect(page.locator(".discovery-workspace")).toBeVisible()
+  await expect(page.locator(".ugc-card").first()).toBeVisible({ timeout: 15_000 })
+  await expect(page.locator(".instant-cta button")).toBeVisible()
   await expectNoHorizontalOverflow(page)
-  await page.screenshot({ path: "e2e-artifacts/mobile-trip-create.png", fullPage: true })
+  await page.screenshot({ path: "e2e-artifacts/mobile-ugc-feed.png", fullPage: true })
 
-  await page.getByRole("button", { name: /进入推荐池/ }).click()
-  await expect(page.getByRole("heading", { name: "推荐池" })).toBeVisible()
-  await expect(page.locator(".poi-card").first()).toBeVisible()
+  await page.locator(".instant-cta button").click()
+  await expect(page.locator(".instant-panel")).toBeVisible()
+  await expect(page.locator(".instant-panel textarea")).toBeVisible()
+  await expect(page.locator(".instant-panel button[type='submit']")).toBeVisible()
   await expectNoHorizontalOverflow(page)
-  await page.screenshot({ path: "e2e-artifacts/mobile-pool.png", fullPage: true })
-
-  await page.getByRole("button", { name: /生成并保存方案/ }).click()
-  await expect(page.locator(".plan-tabs")).toBeVisible()
-  await expect(page.locator(".chat-box")).toBeVisible()
-  await expectNoHorizontalOverflow(page)
-  await page.screenshot({ path: "e2e-artifacts/mobile-plan.png", fullPage: true })
-
-  await page.getByRole("button", { name: "行程详情" }).click()
-  await expect(page.getByRole("heading", { name: /上海/ })).toBeVisible()
-  await expect(page.getByRole("heading", { name: "版本历史" })).toBeVisible()
-  await expectNoHorizontalOverflow(page)
-  await page.screenshot({ path: "e2e-artifacts/mobile-trip-detail.png", fullPage: true })
+  await page.screenshot({ path: "e2e-artifacts/mobile-instant-route.png", fullPage: true })
 })

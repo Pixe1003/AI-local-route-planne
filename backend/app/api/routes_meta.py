@@ -1,5 +1,6 @@
 from fastapi import APIRouter, HTTPException
 
+from app.agent.tools import get_tool_registry
 from app.repositories.poi_repo import get_poi_repository
 
 router = APIRouter(tags=["meta"])
@@ -34,6 +35,11 @@ def personas() -> list[dict[str, str]]:
 @router.get("/meta/cities")
 def cities() -> list[dict[str, str]]:
     return [{"value": "hefei", "label": "合肥"}]
+
+
+@router.get("/agent/tools")
+def agent_tools() -> list[dict]:
+    return get_tool_registry().schemas_for_llm()
 
 
 @router.get("/poi/{poi_id}")

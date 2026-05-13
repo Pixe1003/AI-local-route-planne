@@ -1,11 +1,20 @@
 from app.repositories.poi_repo import get_poi_repository
+from app.repositories.ugc_vector_repo import UgcVectorRepo, get_ugc_vector_repo
 from app.schemas.plan import UgcSnippet
 
 
 class UgcService:
+    def __init__(self, ugc_repo: UgcVectorRepo | None = None) -> None:
+        self.ugc_repo = ugc_repo or get_ugc_vector_repo()
+
     def get_highlight_quotes(
         self, poi_id: str, intent_keywords: list[str], max_count: int = 2
     ) -> list[UgcSnippet]:
+        query = " ".join(intent_keywords)
+        hits = self.ugc_repo.evidence_for_poi(poi_id, query, top_k=max_count)
+        if hits:
+            return [UgcSnippet(quote=hit.snippet, source=hit.source) for hit in hits]
+
         poi = get_poi_repository().get(poi_id)
         quotes = poi.highlight_quotes[:max_count]
         return [

@@ -1,12 +1,20 @@
+from datetime import datetime
 from typing import Any
+from types import SimpleNamespace
 
 from fastapi.testclient import TestClient
 
 from app.api import routes_route
 from app.agent import conductor
+from app.agent.conductor import Conductor
+from app.agent.state import AgentGoal, AgentState
+from app.agent.tools import get_tool_registry
 from app.llm.client import LlmClient
 from app.services import intent_service
 from app.main import app
+from app.schemas.onboarding import UserNeedProfile
+from app.schemas.plan import PlanContext
+from app.schemas.pool import PoolMeta, PoolResponse, TimeWindow
 from app.services.amap.schemas import AmapRouteMode, AmapRouteResult, AmapRouteStep
 
 
@@ -97,11 +105,17 @@ def test_agent_run_fallback_executes_minimal_tool_chain(monkeypatch) -> None:
     assert data["trace_id"]
     assert len(data["ordered_poi_ids"]) >= 2
     assert data["route_chain"]["ordered_pois"]
-    assert len(route_calls) == len(data["ordered_poi_ids"]) - 1
-    assert [step["tool_name"] for step in data["steps"]] == [
+    assert data["story_plan"]["stops"]
+    assert data["critique"] is not None
+    assert len(route_calls) >= len(data["ordered_poi_ids"]) - 1
+    assert [step["tool_name"] for step in data["steps"]][:7] == [
         "parse_intent",
+        "search_ugc_evidence",
         "recommend_pool",
+        "compose_story",
         "get_amap_chain",
+        "validate_route",
+        "critique",
     ]
 
 
@@ -127,3 +141,69 @@ def test_agent_run_uses_rule_sequence_without_llm_decision_by_default(monkeypatc
 
     assert response.status_code == 200
     assert response.json()["phase"] == "DONE"
+
+
+def test_conductor_uses_llm_tool_decision_when_enabled(monkeypatch) -> None:
+    monkeypatch.setattr(
+        conductor,
+        "get_settings",
+        lambda: SimpleNamespace(agent_tool_calling_enabled=True),
+    )
+
+    class FakeLlm:
+        def complete_tool_call(self, *args: Any, **kwargs: Any) -> dict[str, Any]:
+            return {"tool": "search_ugc_evidence", "args": {"query": "local food", "city": "hefei"}}
+
+    context = PlanContext(
+        city="hefei",
+        date="2026-05-08",
+        time_window=TimeWindow(start="14:00", end="20:00"),
+        party="friends",
+        budget_per_person=180,
+    )
+    state = AgentState(
+        goal=AgentGoal(raw_query="local food", user_id="mock_user"),
+        profile=UserNeedProfile.from_plan_context(context, raw_query="local food"),
+        context=context,
+    )
+    decision = Conductor(get_tool_registry(), FakeLlm())._decide(state)
+
+    assert decision.tool == "search_ugc_evidence"
+    assert decision.args == {"query": "local food", "city": "hefei"}
+
+
+def test_recommend_pool_does_not_fallback_to_shanghai_when_city_pool_is_empty(monkeypatch) -> None:
+    calls: list[str] = []
+
+    class FakePoolService:
+        def generate_pool(self, request):
+            calls.append(request.city)
+            return PoolResponse(
+                pool_id=f"pool_{request.city}",
+                categories=[],
+                default_selected_ids=[],
+                meta=PoolMeta(
+                    total_count=0,
+                    generated_at=datetime(2026, 5, 13),
+                    user_persona_summary="empty test pool",
+                ),
+            )
+
+    monkeypatch.setattr("app.agent.tools.PoolService", FakePoolService)
+    context = PlanContext(
+        city="hefei",
+        date="2026-05-08",
+        time_window=TimeWindow(start="14:00", end="20:00"),
+        party="friends",
+        budget_per_person=180,
+    )
+    state = AgentState(
+        goal=AgentGoal(raw_query="local food", user_id="mock_user"),
+        profile=UserNeedProfile.from_plan_context(context, raw_query="local food"),
+        context=context,
+    )
+
+    result = get_tool_registry().execute("recommend_pool", state, {"city": "hefei"})
+
+    assert calls == ["hefei"]
+    assert result.payload.pool_id == "pool_hefei"

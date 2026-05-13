@@ -4,6 +4,7 @@ from uuid import uuid4
 
 from pydantic import BaseModel, Field
 
+from app.agent.story_models import StoryPlan
 from app.schemas.onboarding import UserNeedProfile
 from app.schemas.plan import PlanContext, StructuredIntent
 from app.schemas.pool import PoolResponse
@@ -49,6 +50,11 @@ class AgentMemory(BaseModel):
     validation: Any | None = None
     critique: Critique | None = None
     ugc_hits: list[dict[str, Any]] = Field(default_factory=list)
+    ugc_searched: bool = False
+    story_plan: StoryPlan | None = None
+    story_retry_count: int = 0
+    feedback_intent: dict[str, Any] | None = None
+    feedback_applied: bool = False
 
 
 class AgentState(BaseModel):
@@ -69,4 +75,3 @@ class AgentState(BaseModel):
     ] = "UNDERSTANDING"
     version: int = 1
     trace_id: str = Field(default_factory=lambda: uuid4().hex)
-

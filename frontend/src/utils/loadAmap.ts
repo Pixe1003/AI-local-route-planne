@@ -11,6 +11,7 @@ export type AMapOverlayInstance = {
 export type AMapMapInstance = {
   add: (overlays: AMapOverlayInstance | AMapOverlayInstance[]) => void
   destroy: () => void
+  on?: (eventName: "complete", handler: () => void) => void
   setFitView: (overlays?: AMapOverlayInstance[]) => void
 }
 

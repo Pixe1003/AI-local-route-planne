@@ -121,7 +121,7 @@ class LlmClient:
             return settings.llm_base_url
         provider = self._provider(settings)
         if provider == "longcat":
-            return "https://api.longcat.chat/openai/v1"
+            return "https://api.longcat.ai/v1"
         if provider == "mimo":
             return "https://api.mimo-v2.com/v1"
         if provider == "deepseek":

@@ -124,6 +124,8 @@ export function DiscoveryFeedPage() {
         source: "ugc_instant_route",
         pool_id: agentResult.pool?.pool_id,
         session_id: agentResult.session_id,
+        story_plan: agentResult.story_plan ?? null,
+        agent_steps: agentResult.steps,
         free_text: query,
         date,
         time_window: { start, end }
@@ -191,7 +193,13 @@ export function DiscoveryFeedPage() {
         {feed.map(item => (
           <article className={isLiked(item.poi_id) ? "ugc-card liked" : "ugc-card"} key={item.post_id}>
             <div className="ugc-cover-wrap">
-              <img alt={item.poi_name} className="ugc-cover" src={item.cover_image ?? ""} />
+              {item.cover_image ? (
+                <img alt={item.poi_name} className="ugc-cover" src={item.cover_image} />
+              ) : (
+                <div aria-label={item.poi_name} className="ugc-cover ugc-cover-placeholder" role="img">
+                  <MapPin size={22} />
+                </div>
+              )}
               <button
                 className={isLiked(item.poi_id) ? "heart-button active" : "heart-button"}
                 onClick={() => toggleLike(item)}

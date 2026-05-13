@@ -32,7 +32,7 @@ export function getApiErrorMessage(error: unknown): string {
 
 export const apiClient = axios.create({
   baseURL: import.meta.env.VITE_API_BASE_URL || "/api",
-  timeout: 30_000
+  timeout: 0
 })
 
 apiClient.interceptors.response.use(

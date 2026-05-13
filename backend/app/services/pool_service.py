@@ -40,6 +40,7 @@ class PoolService:
         self.repo = get_poi_repository()
         self.vector_repo = VectorRepository()
         self.poi_scorer = PoiScoringService()
+        self.ugc_repo = self.poi_scorer.ugc_repo
 
     def generate_pool(self, request: PoolRequest) -> PoolResponse:
         profile = request.need_profile
@@ -90,7 +91,7 @@ class PoolService:
                     cover_image=poi.cover_image,
                     distance_meters=None,
                     why_recommend=self._why_recommend(poi.name, poi.tags, free_text, breakdown.history_preference),
-                    highlight_quote=poi.highlight_quotes[0].quote if poi.highlight_quotes else None,
+                    highlight_quote=self._highlight_quote(poi, free_text),
                     keywords=[item["keyword"] for item in poi.high_freq_keywords[:5]],
                     estimated_queue_min=poi.queue_estimate["weekend_peak"],
                     suitable_score=round(score, 3),
@@ -172,6 +173,12 @@ class PoolService:
             return f"{name}适合拍照打卡，也方便和周边点位串联。"
         return f"{name}和本次需求匹配度较高，适合作为路线候选。"
 
+    def _highlight_quote(self, poi, free_text: str | None) -> str | None:
+        hits = self.ugc_repo.evidence_for_poi(poi.id, free_text or "", top_k=1)
+        if hits:
+            return hits[0].snippet
+        return poi.highlight_quotes[0].quote if poi.highlight_quotes else None
+
     def _default_selected_ids(self, categories: list[PoolCategory], request: PoolRequest) -> list[str]:
         all_pois = [poi for category in categories for poi in category.pois]
         by_id = {poi.id: poi for poi in all_pois}
@@ -217,7 +224,7 @@ class PoolService:
                     cover_image=poi.cover_image,
                     distance_meters=None,
                     why_recommend="Based on the current route feedback.",
-                    highlight_quote=poi.highlight_quotes[0].quote if poi.highlight_quotes else None,
+                    highlight_quote=self._highlight_quote(poi, feedback_text),
                     keywords=[item["keyword"] for item in poi.high_freq_keywords[:5]],
                     estimated_queue_min=poi.queue_estimate["weekend_peak"],
                     suitable_score=poi.rating / 5,
