@@ -9,14 +9,39 @@ from app.schemas.ugc import UgcReview, UgcSearchHit
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
+MODEL_NAME = "BAAI/bge-small-zh-v1.5"
+SentenceTransformer = None
 
 
 class UgcVectorRepo:
     """Local UGC evidence index with the same boundary as a vector store adapter."""
 
-    def __init__(self, data_path: str | Path | None = None) -> None:
+    def __init__(
+        self,
+        data_path: str | Path | None = None,
+        *,
+        faiss_index_path: str | Path | None = None,
+        embed_path: str | Path | None = None,
+        meta_path: str | Path | None = None,
+    ) -> None:
         self.data_path = _resolve_data_path(data_path)
+        self._faiss_index_path = _resolve_optional_path(
+            faiss_index_path,
+            PROJECT_ROOT / "data" / "processed" / "ugc_hefei.faiss",
+        )
+        self._embed_path = _resolve_optional_path(
+            embed_path,
+            PROJECT_ROOT / "data" / "processed" / "ugc_hefei_embeddings.npy",
+        )
+        self._meta_path = _resolve_optional_path(
+            meta_path,
+            PROJECT_ROOT / "data" / "processed" / "ugc_hefei_meta.jsonl",
+        )
         self._reviews: list[UgcReview] | None = None
+        self._faiss_index: Any | None = None
+        self._embeddings: Any | None = None
+        self._metas: list[dict[str, Any]] | None = None
+        self._model: Any | None = None
 
     def list_reviews(self, *, city: str | None = None, limit: int | None = None) -> list[UgcReview]:
         reviews = self._load_reviews()
@@ -28,6 +53,20 @@ class UgcVectorRepo:
         return bool(self._load_reviews())
 
     def search(
+        self,
+        query: str,
+        *,
+        city: str | None = "hefei",
+        poi_id: str | None = None,
+        top_k: int = 8,
+    ) -> list[UgcSearchHit]:
+        if query and self._ensure_faiss_index():
+            return self._search_faiss(query, city=city, poi_id=poi_id, top_k=top_k)
+        if query and self._ensure_embeddings():
+            return self._search_semantic(query, city=city, poi_id=poi_id, top_k=top_k)
+        return self._search_lexical(query, city=city, poi_id=poi_id, top_k=top_k)
+
+    def _search_lexical(
         self,
         query: str,
         *,
@@ -77,6 +116,166 @@ class UgcVectorRepo:
                 reviews.extend(_row_to_reviews(row, line_no=line_no))
         self._reviews = reviews
         return self._reviews
+
+    def _ensure_faiss_index(self) -> bool:
+        if self._faiss_index is not None and self._metas is not None and self._model is not None:
+            return True
+        if not (self._faiss_index_path.exists() and self._meta_path.exists()):
+            return False
+        try:
+            import faiss
+        except ImportError:
+            return False
+        model_cls = self._load_model_cls()
+        if model_cls is None:
+            return False
+
+        try:
+            index = faiss.read_index(str(self._faiss_index_path))
+            metas = self._load_metas()
+            model = model_cls(MODEL_NAME)
+        except Exception:
+            return False
+        if len(metas) != int(index.ntotal):
+            return False
+        self._faiss_index = index
+        self._metas = metas
+        self._model = model
+        return True
+
+    def _ensure_embeddings(self) -> bool:
+        if self._embeddings is not None and self._metas is not None and self._model is not None:
+            return True
+        if not (self._embed_path.exists() and self._meta_path.exists()):
+            return False
+        try:
+            import numpy as np
+        except ImportError:
+            return False
+        model_cls = self._load_model_cls()
+        if model_cls is None:
+            return False
+
+        try:
+            self._embeddings = np.load(self._embed_path)
+            self._metas = self._load_metas()
+            model = model_cls(MODEL_NAME)
+        except Exception:
+            self._embeddings = None
+            self._metas = None
+            return False
+        if len(self._metas) != len(self._embeddings):
+            self._embeddings = None
+            self._metas = None
+            return False
+        self._model = model
+        return True
+
+    def _load_model_cls(self) -> Any | None:
+        model_cls = SentenceTransformer
+        if model_cls is not None:
+            return model_cls
+        try:
+            from sentence_transformers import SentenceTransformer as model_cls
+        except ImportError:
+            return None
+        return model_cls
+
+    def _load_metas(self) -> list[dict[str, Any]]:
+        return [
+            json.loads(line)
+            for line in self._meta_path.read_text(encoding="utf-8").splitlines()
+            if line.strip()
+        ]
+
+    def _search_faiss(
+        self,
+        query: str,
+        *,
+        city: str | None,
+        poi_id: str | None,
+        top_k: int,
+    ) -> list[UgcSearchHit]:
+        import numpy as np
+
+        assert self._faiss_index is not None
+        assert self._metas is not None
+        assert self._model is not None
+
+        q_emb = np.asarray(
+            self._model.encode(query, normalize_embeddings=True),
+            dtype="float32",
+        )
+        if q_emb.ndim == 1:
+            q_emb = q_emb.reshape(1, -1)
+        search_k = top_k
+        if poi_id:
+            search_k = int(self._faiss_index.ntotal)
+        elif city:
+            search_k = min(int(self._faiss_index.ntotal), max(top_k * 4, top_k))
+        scores, indices = self._faiss_index.search(q_emb, search_k)
+        hits: list[UgcSearchHit] = []
+        for score, index in zip(scores[0], indices[0]):
+            index = int(index)
+            if index < 0 or index >= len(self._metas):
+                continue
+            meta = self._metas[index]
+            if city and meta.get("city", city) != city:
+                continue
+            if poi_id and meta.get("poi_id") != poi_id:
+                continue
+            hits.append(self._meta_to_hit(meta, float(score)))
+            if len(hits) >= top_k:
+                break
+        return hits
+
+    def _search_semantic(
+        self,
+        query: str,
+        *,
+        city: str | None,
+        poi_id: str | None,
+        top_k: int,
+    ) -> list[UgcSearchHit]:
+        import numpy as np
+
+        assert self._embeddings is not None
+        assert self._metas is not None
+        assert self._model is not None
+
+        q_emb = self._model.encode(query, normalize_embeddings=True).astype("float32")
+        scores = self._embeddings @ q_emb
+        mask = np.ones(len(scores), dtype=bool)
+        if city:
+            mask = np.array(
+                [meta.get("city", city) == city for meta in self._metas],
+                dtype=bool,
+            )
+        if poi_id:
+            poi_mask = np.array([meta.get("poi_id") == poi_id for meta in self._metas], dtype=bool)
+            mask = mask & poi_mask
+        scores = np.where(mask, scores, -1.0)
+        top_idx = np.argsort(-scores)[:top_k]
+        return [
+            self._meta_to_hit(self._metas[index], float(scores[index]))
+            for index in top_idx
+            if mask[index]
+        ]
+
+    def _meta_to_hit(self, meta: dict[str, Any], score: float) -> UgcSearchHit:
+        category = str(meta.get("category") or _category_from_subcategory(_optional_str(meta.get("sub_category"))))
+        content = str(meta.get("content") or "")
+        return UgcSearchHit(
+            post_id=str(meta.get("post_id") or f"ugc_{meta.get('poi_id', 'unknown')}"),
+            poi_id=str(meta.get("poi_id") or ""),
+            poi_name=str(meta.get("poi_name") or meta.get("poi_id") or ""),
+            snippet=_snippet(content),
+            source=str(meta.get("source") or "simulated_ugc"),
+            score=round(score, 4),
+            rating=_float_or_none(meta.get("rating")),
+            category=category,
+            tags=[str(item) for item in meta.get("tags", [])] if isinstance(meta.get("tags"), list) else [],
+        )
 
     def _score_review(self, review: UgcReview, query: str) -> float:
         if not query:
@@ -128,6 +327,13 @@ def get_ugc_vector_repo() -> UgcVectorRepo:
 
 def _resolve_data_path(data_path: str | Path | None) -> Path:
     raw = Path(data_path or get_settings().ugc_reviews_path)
+    return raw if raw.is_absolute() else PROJECT_ROOT / raw
+
+
+def _resolve_optional_path(path: str | Path | None, default: Path) -> Path:
+    if path is None:
+        return default
+    raw = Path(path)
     return raw if raw.is_absolute() else PROJECT_ROOT / raw
 
 
