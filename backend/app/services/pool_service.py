@@ -72,7 +72,7 @@ class PoolService:
             key=lambda item: item[0],
             reverse=True,
         )
-        selected = scored[:24]
+        selected = self._diverse_candidates(scored, limit=24)
         grouped: dict[str, list[PoiInPool]] = {}
         for score, poi in selected:
             breakdown = self.poi_scorer.score_poi(
@@ -157,6 +157,25 @@ class PoolService:
                 - budget_penalty,
             ),
         )
+
+    def _diverse_candidates(self, scored, *, limit: int):
+        selected: list[tuple[float, object]] = []
+        selected_ids: set[str] = set()
+
+        for category in self.CATEGORY_ORDER:
+            item = next((entry for entry in scored if entry[1].category == category), None)
+            if item and item[1].id not in selected_ids:
+                selected.append(item)
+                selected_ids.add(item[1].id)
+
+        for item in scored:
+            if len(selected) >= limit:
+                break
+            if item[1].id in selected_ids:
+                continue
+            selected.append(item)
+            selected_ids.add(item[1].id)
+        return selected[:limit]
 
     def _why_recommend(
         self,

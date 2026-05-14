@@ -19,7 +19,8 @@ vi.mock("../api/chat", () => ({
 }))
 
 vi.mock("../api/agent", () => ({
-  adjustAgentRoute: (payload: unknown) => adjustAgentRoute(payload)
+  adjustAgentRoute: (payload: unknown) => adjustAgentRoute(payload),
+  agentTraceStreamUrl: (sessionId: string) => `/api/agent/stream/${sessionId}`
 }))
 
 const routeResult: RouteChainResponse = {
