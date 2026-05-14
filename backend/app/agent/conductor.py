@@ -72,7 +72,10 @@ class Conductor:
 
     def _decide(self, state: AgentState) -> Decision:
         fallback = self._rule_based_decision(state)
-        if not get_settings().agent_tool_calling_enabled:
+        settings = get_settings()
+        if not settings.agent_tool_calling_enabled:
+            return fallback
+        if getattr(settings, "agent_fast_decision_enabled", False):
             return fallback
         raw = self.llm.complete_tool_call(
             self._build_decision_prompt(state),
@@ -137,6 +140,9 @@ class Conductor:
 
     def _build_decision_prompt(self, state: AgentState) -> str:
         completed = [step.tool_name for step in state.steps]
+        facts_block = ""
+        if state.memory.user_facts and state.memory.user_facts.session_count > 0:
+            facts_block = f"; user_facts={state.memory.user_facts.to_prompt_block()}"
         return (
             "Choose the next AIroute agent tool. "
             f"phase={state.phase}; completed={completed}; "
@@ -146,6 +152,7 @@ class Conductor:
             f"has_route={state.memory.route_chain is not None}; "
             f"has_validation={state.memory.validation is not None}; "
             f"has_critique={state.memory.critique is not None}"
+            f"{facts_block}"
         )
 
     def _apply_result(self, state: AgentState, result: ToolResult) -> None:

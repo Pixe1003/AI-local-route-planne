@@ -9,15 +9,18 @@ from pydantic import BaseModel, Field
 from app.agent.conductor import Conductor
 from app.agent.state import AgentGoal, AgentState, Critique, ToolCall
 from app.agent.story_models import StoryPlan
-from app.agent.store import load_state, save_state
+from app.agent.session_summarizer import summarize_session
+from app.agent.store import list_sessions, load_state, save_state
 from app.agent.tools import get_tool_registry
 from app.agent.tracing import get_trace_events, subscribe, unsubscribe
+from app.agent.user_memory import get_user_facts
 from app.llm.client import LlmClient
 from app.schemas.onboarding import UserNeedProfile
 from app.schemas.plan import PlanContext, ValidationResult
 from app.schemas.pool import PoolResponse, TimeWindow
 from app.schemas.preferences import PreferenceSnapshot
 from app.schemas.route import RouteChainResponse
+from app.schemas.user_memory import SimilarSessionHit, UserFacts
 
 
 router = APIRouter(prefix="/agent", tags=["agent"])
@@ -90,6 +93,11 @@ def list_agent_tools() -> list[dict]:
     return get_tool_registry().schemas_for_llm()
 
 
+@router.get("/user/{user_id}/facts", response_model=UserFacts)
+def get_user_facts_endpoint(user_id: str, force_refresh: bool = False) -> UserFacts:
+    return get_user_facts(user_id, force_refresh=force_refresh)
+
+
 @router.get("/stream/{session_id}")
 async def stream_trace(session_id: str) -> StreamingResponse:
     async def gen():
@@ -129,7 +137,7 @@ def build_initial_state(request: AgentRunRequest) -> AgentState:
     )
     profile = UserNeedProfile.from_plan_context(context, raw_query=request.free_text)
     profile.user_id = request.user_id
-    return AgentState(
+    state = AgentState(
         goal=AgentGoal(
             kind="plan_route",
             raw_query=request.free_text,
@@ -141,6 +149,8 @@ def build_initial_state(request: AgentRunRequest) -> AgentState:
         preference=request.preference_snapshot,
         context=context,
     )
+    _enrich_initial_memory(state, request, session_id)
+    return state
 
 
 def build_adjust_state(parent: AgentState, request: AgentAdjustRequest) -> AgentState:
@@ -161,6 +171,54 @@ def build_adjust_state(parent: AgentState, request: AgentAdjustRequest) -> Agent
     state.memory.feedback_intent = None
     state.memory.feedback_applied = False
     return state
+
+
+def _enrich_initial_memory(
+    state: AgentState,
+    request: AgentRunRequest,
+    session_id: str,
+) -> None:
+    state.memory.episodic_summary = _load_episodic_summaries(request.user_id)
+    try:
+        facts = get_user_facts(request.user_id)
+    except Exception:
+        facts = None
+    state.memory.user_facts = facts
+    if facts and facts.rejected_poi_ids:
+        state.profile.must_avoid = list(
+            dict.fromkeys([*state.profile.must_avoid, *facts.rejected_poi_ids])
+        )
+    state.memory.similar_sessions = _load_similar_sessions(request, session_id)
+    state.memory.similar_sessions_searched = True
+
+
+def _load_episodic_summaries(user_id: str) -> list:
+    summaries = []
+    for past_state in list_sessions(user_id, limit=5):
+        if past_state.memory.story_plan is None:
+            continue
+        try:
+            summaries.append(summarize_session(past_state))
+        except Exception:
+            continue
+    return summaries
+
+
+def _load_similar_sessions(
+    request: AgentRunRequest,
+    session_id: str,
+) -> list[SimilarSessionHit]:
+    try:
+        from app.repositories.session_vector_repo import get_session_vector_repo
+
+        return get_session_vector_repo().search_similar(
+            request.user_id,
+            request.free_text,
+            top_k=3,
+            exclude_session_id=session_id,
+        )
+    except Exception:
+        return []
 
 
 def _response_from_state(state: AgentState) -> AgentRunResponse:

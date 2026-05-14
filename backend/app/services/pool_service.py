@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+from typing import Any
 from uuid import uuid4
 
 from app.repositories.poi_repo import get_poi_repository
@@ -55,6 +56,12 @@ class PoolService:
         candidates = self.repo.list_by_city(city)
         if not candidates and city != "hefei":
             candidates = self.repo.list_by_city("hefei")
+        if request.user_facts and request.user_facts.rejected_poi_ids:
+            rejected = set(request.user_facts.rejected_poi_ids)
+            filtered = [poi for poi in candidates if poi.id not in rejected]
+            if len(filtered) >= 3:
+                candidates = filtered
+        ugc_by_poi = self._ugc_hits_by_poi(request.ugc_hits)
         scored = sorted(
             (
                 (
@@ -64,6 +71,7 @@ class PoolService:
                         free_text,
                         budget,
                         request=request,
+                        ugc_by_poi=ugc_by_poi,
                     ),
                     poi,
                 )
@@ -80,6 +88,7 @@ class PoolService:
                 profile=profile,
                 preference_snapshot=request.preference_snapshot,
                 free_text=free_text,
+                user_facts=request.user_facts,
             )
             grouped.setdefault(poi.category, []).append(
                 PoiInPool(
@@ -91,7 +100,7 @@ class PoolService:
                     cover_image=poi.cover_image,
                     distance_meters=None,
                     why_recommend=self._why_recommend(poi.name, poi.tags, free_text, breakdown.history_preference),
-                    highlight_quote=self._highlight_quote(poi, free_text),
+                    highlight_quote=self._highlight_quote(poi, free_text, request.ugc_hits),
                     keywords=[item["keyword"] for item in poi.high_freq_keywords[:5]],
                     estimated_queue_min=poi.queue_estimate["weekend_peak"],
                     suitable_score=round(score, 3),
@@ -128,19 +137,15 @@ class PoolService:
         free_text: str | None,
         budget_per_person: int | None,
         request: PoolRequest | None = None,
+        ugc_by_poi: dict[str, list[dict[str, Any]]] | None = None,
     ) -> float:
-        breakdown = self.poi_scorer.score_poi(
-            poi,
-            profile=request.need_profile if request else None,
-            preference_snapshot=request.preference_snapshot if request else None,
-            free_text=free_text,
-        )
         rating_score = poi.rating / 5 * 0.22
         semantic_score = self.vector_repo.score(poi, persona_tags, free_text) * 0.24
         popularity_score = min(poi.review_count / 1200, 1) * 0.08
         queue_bonus = max(0, (60 - poi.queue_estimate["weekend_peak"]) / 60) * 0.08
-        profile_score = min(max(breakdown.total, 0) / 100, 1) * 0.24
-        history_score = max(breakdown.history_preference, 0) / 22 * 0.20
+        profile_score = self._cheap_profile_score(poi, request, free_text) * 0.24
+        history_score = self._cheap_history_score(poi, request) * 0.20
+        ugc_bonus = 0.10 if ugc_by_poi and poi.id in ugc_by_poi else 0.0
         budget_penalty = 0.0
         if budget_per_person and poi.price_per_person and poi.price_per_person > budget_per_person:
             budget_penalty = min((poi.price_per_person - budget_per_person) / max(budget_per_person, 1), 2) * 0.18
@@ -154,6 +159,7 @@ class PoolService:
                 + queue_bonus
                 + profile_score
                 + history_score
+                + ugc_bonus
                 - budget_penalty,
             ),
         )
@@ -192,11 +198,61 @@ class PoolService:
             return f"{name}适合拍照打卡，也方便和周边点位串联。"
         return f"{name}和本次需求匹配度较高，适合作为路线候选。"
 
-    def _highlight_quote(self, poi, free_text: str | None) -> str | None:
+    def _highlight_quote(self, poi, free_text: str | None, ugc_hits: list[dict[str, Any]] | None = None) -> str | None:
+        for hit in ugc_hits or []:
+            if str(hit.get("poi_id")) == poi.id and hit.get("snippet"):
+                return str(hit["snippet"])
+        if ugc_hits:
+            return poi.highlight_quotes[0].quote if poi.highlight_quotes else None
         hits = self.ugc_repo.evidence_for_poi(poi.id, free_text or "", top_k=1)
         if hits:
             return hits[0].snippet
         return poi.highlight_quotes[0].quote if poi.highlight_quotes else None
+
+    def _cheap_profile_score(self, poi, request: PoolRequest | None, free_text: str | None) -> float:
+        score = 0.45
+        profile = request.need_profile if request else None
+        text = free_text or ""
+        if profile and profile.party_type and profile.party_type in poi.suitable_for:
+            score += 0.12
+        if any(keyword in text for keyword in ["吃", "餐", "美食", "本地菜", "火锅"]):
+            score += 0.18 if poi.category == "restaurant" else 0.0
+        if "咖啡" in text and poi.category == "cafe":
+            score += 0.14
+        if any(keyword in text for keyword in ["拍照", "打卡"]) and (
+            "photogenic" in poi.tags or "拍照" in poi.tags or "打卡" in poi.tags
+        ):
+            score += 0.12
+        return min(score, 1.0)
+
+    def _cheap_history_score(self, poi, request: PoolRequest | None) -> float:
+        if request is None:
+            return 0.0
+        score = 0.0
+        snapshot = request.preference_snapshot
+        if snapshot:
+            if poi.id in snapshot.disliked_poi_ids:
+                return -0.7
+            if poi.id in snapshot.liked_poi_ids:
+                score += 0.7
+            score += snapshot.category_weights.get(poi.category, 0.0) * 0.2
+        facts = request.user_facts
+        if facts:
+            if poi.id in facts.rejected_poi_ids:
+                return -0.8
+            if poi.category in facts.favorite_categories:
+                score += 0.25
+            if poi.category in facts.avoid_categories:
+                score -= 0.35
+        return max(-1.0, min(score, 1.0))
+
+    def _ugc_hits_by_poi(self, ugc_hits: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
+        grouped: dict[str, list[dict[str, Any]]] = {}
+        for hit in ugc_hits:
+            poi_id = str(hit.get("poi_id") or "")
+            if poi_id:
+                grouped.setdefault(poi_id, []).append(hit)
+        return grouped
 
     def _default_selected_ids(self, categories: list[PoolCategory], request: PoolRequest) -> list[str]:
         all_pois = [poi for category in categories for poi in category.pois]

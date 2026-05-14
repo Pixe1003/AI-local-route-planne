@@ -38,6 +38,19 @@ SEARCH_UGC_EVIDENCE = {
     },
 }
 
+RECALL_SIMILAR_SESSIONS = {
+    "name": "recall_similar_sessions",
+    "description": "Retrieve semantically similar past route sessions from the user's memory.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "query": {"type": "string"},
+            "top_k": {"type": "integer"},
+        },
+        "required": ["query"],
+    },
+}
+
 COMPOSE_STORY = {
     "name": "compose_story",
     "description": "Compose a themed 3-5 POI route story with grounded UGC evidence.",
@@ -102,6 +115,7 @@ FINISH = {
 TOOL_SCHEMAS = [
     PARSE_INTENT,
     SEARCH_UGC_EVIDENCE,
+    RECALL_SIMILAR_SESSIONS,
     RECOMMEND_POOL,
     COMPOSE_STORY,
     GET_AMAP_CHAIN,

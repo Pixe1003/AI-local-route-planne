@@ -196,6 +196,11 @@ class StoryAgent:
         pool = state.memory.pool
         if pool is None:
             return []
+        avoid_ids = set()
+        if state.memory.intent:
+            avoid_ids.update(state.memory.intent.avoid_pois)
+        if state.memory.user_facts:
+            avoid_ids.update(state.memory.user_facts.rejected_poi_ids)
         ugc_hits = state.memory.ugc_hits or []
         ugc_by_poi: dict[str, list[dict[str, Any]]] = {}
         for hit in ugc_hits:
@@ -205,6 +210,8 @@ class StoryAgent:
         seen: set[str] = set()
         for category in pool.categories:
             for poi in category.pois:
+                if poi.id in avoid_ids:
+                    continue
                 if poi.id in seen:
                     continue
                 seen.add(poi.id)
@@ -242,11 +249,38 @@ class StoryAgent:
             }
             for item in candidates[:12]
         ]
+        memory_block = self._memory_prompt_block(state)
         return (
             "Build a 3-5 stop route story. "
             "Return JSON with theme, narrative, stops, dropped, fallback_used. "
             f"query={state.goal.raw_query}; candidates={rows}"
+            f"{memory_block}"
         )
+
+    def _memory_prompt_block(self, state: Any) -> str:
+        blocks: list[str] = []
+        if state.memory.episodic_summary:
+            lines = []
+            for item in state.memory.episodic_summary[:3]:
+                lines.append(
+                    f"- {item.created_at:%Y-%m-%d}: query={item.raw_query!r}; "
+                    f"theme={item.theme!r}; stops={','.join(item.stop_poi_names[:3])}"
+                )
+            blocks.append(
+                "\n\nUser's recent route history (avoid repeating themes):\n" + "\n".join(lines)
+            )
+        if state.memory.user_facts and state.memory.user_facts.session_count > 0:
+            blocks.append("\n\nUser facts:\n" + state.memory.user_facts.to_prompt_block())
+        if state.memory.similar_sessions:
+            lines = []
+            for hit in state.memory.similar_sessions[:2]:
+                lines.append(
+                    f"- {hit.days_ago}d ago: query={hit.raw_query!r}; "
+                    f"theme={hit.theme!r}; stops={','.join(hit.stop_poi_names[:3])}; "
+                    f"similarity={hit.similarity:.2f}"
+                )
+            blocks.append("\n\nSemantically similar past sessions:\n" + "\n".join(lines))
+        return "".join(blocks)
 
     def _why(self, item: CandidateEvidence, index: int) -> str:
         role = self.ROLES[min(index, len(self.ROLES) - 1)]

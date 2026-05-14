@@ -20,6 +20,7 @@ from app.services.amap.schemas import AmapLngLat, AmapRouteResult
 
 router = APIRouter(prefix="/route", tags=["route"])
 SEGMENT_ROUTE_ATTEMPTS = 2
+_SEGMENT_ROUTE_CACHE: dict[tuple[str, str, str], AmapRouteResult] = {}
 
 
 @router.post("/chain", response_model=RouteChainResponse)
@@ -144,10 +145,16 @@ def _get_route_with_retry(
     origin: AmapLngLat,
     destination: AmapLngLat,
 ) -> AmapRouteResult:
+    cache_key = (str(mode), origin.to_amap_param(), destination.to_amap_param())
+    cached = _SEGMENT_ROUTE_CACHE.get(cache_key)
+    if cached is not None:
+        return cached
     last_error: AmapUpstreamError | None = None
     for _ in range(SEGMENT_ROUTE_ATTEMPTS):
         try:
-            return client.get_route(mode=mode, origin=origin, destination=destination)
+            result = client.get_route(mode=mode, origin=origin, destination=destination)
+            _SEGMENT_ROUTE_CACHE[cache_key] = result
+            return result
         except AmapUpstreamError as exc:
             last_error = exc
     if last_error is not None:

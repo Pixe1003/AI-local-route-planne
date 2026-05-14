@@ -223,6 +223,53 @@ textarea {
   cursor: not-allowed;
 }
 
+.user-memory-panel {
+  display: grid;
+  gap: 9px;
+  margin: -6px 0 18px;
+  padding: 12px 14px;
+  border: 1px solid #d9eadf;
+  border-radius: 8px;
+  background: #f8fcfa;
+  color: #25362d;
+}
+
+.user-memory-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+}
+
+.user-memory-title svg {
+  color: #1f7a4d;
+}
+
+.user-memory-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.user-memory-facts span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 26px;
+  padding: 0 9px;
+  border: 1px solid #dce8e0;
+  border-radius: 999px;
+  background: #ffffff;
+  color: #33443a;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.user-memory-panel small {
+  color: #6c7a71;
+  font-weight: 700;
+}
+
 .ugc-feed-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -736,6 +783,10 @@ textarea {
   .liked-strip {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .user-memory-panel {
+    margin-top: -4px;
   }
 
   .ugc-feed-grid {

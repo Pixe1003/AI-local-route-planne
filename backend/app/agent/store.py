@@ -1,4 +1,5 @@
 import sqlite3
+import threading
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -21,6 +22,14 @@ CREATE TABLE IF NOT EXISTS agent_sessions (
 );
 CREATE INDEX IF NOT EXISTS idx_sessions_user ON agent_sessions(user_id);
 CREATE INDEX IF NOT EXISTS idx_sessions_updated ON agent_sessions(updated_at DESC);
+
+CREATE TABLE IF NOT EXISTS user_facts (
+    user_id TEXT PRIMARY KEY,
+    facts_json TEXT NOT NULL,
+    session_count INTEGER NOT NULL DEFAULT 0,
+    updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_facts_updated ON user_facts(updated_at DESC);
 """
 
 
@@ -58,6 +67,8 @@ def save_state(state: AgentState) -> None:
                 now,
             ),
         )
+    _invalidate_user_facts(state.goal.user_id)
+    _queue_session_vector_persist(state)
 
 
 def load_state(session_id: str) -> AgentState | None:
@@ -81,3 +92,37 @@ def list_sessions(user_id: str, limit: int = 20) -> list[AgentState]:
             (user_id, limit),
         ).fetchall()
     return [AgentState.model_validate_json(row[0]) for row in rows]
+
+
+def _invalidate_user_facts(user_id: str) -> None:
+    try:
+        from app.agent.user_memory import invalidate_facts
+
+        invalidate_facts(user_id)
+    except Exception:
+        return
+
+
+def _persist_session_vector(state: AgentState) -> None:
+    if state.phase != "DONE" or state.memory.story_plan is None:
+        return
+    try:
+        from app.agent.session_summarizer import summarize_session
+        from app.repositories.session_vector_repo import get_session_vector_repo
+
+        get_session_vector_repo().add_session(state, summarize_session(state))
+    except Exception:
+        return
+
+
+def _queue_session_vector_persist(state: AgentState) -> None:
+    if state.phase != "DONE" or state.memory.story_plan is None:
+        return
+    snapshot = state.model_copy(deep=True)
+    thread = threading.Thread(
+        target=_persist_session_vector,
+        args=(snapshot,),
+        name=f"session-vector-{state.goal.session_id[:8]}",
+        daemon=True,
+    )
+    thread.start()

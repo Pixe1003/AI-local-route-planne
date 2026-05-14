@@ -5,6 +5,7 @@ const mocks = vi.hoisted(() => ({
   navigate: vi.fn(),
   syncSnapshot: vi.fn(),
   runAgentRoute: vi.fn(),
+  fetchUserFacts: vi.fn(),
   fetchUgcFeed: vi.fn(),
   fetchPool: vi.fn(),
   setNeedProfile: vi.fn(),
@@ -24,7 +25,8 @@ vi.mock("../api/ugc", () => ({
 }))
 
 vi.mock("../api/agent", () => ({
-  runAgentRoute: (payload: unknown) => mocks.runAgentRoute(payload)
+  runAgentRoute: (payload: unknown) => mocks.runAgentRoute(payload),
+  fetchUserFacts: (userId: string, forceRefresh?: boolean) => mocks.fetchUserFacts(userId, forceRefresh)
 }))
 
 vi.mock("../store/preferenceStore", () => ({
@@ -63,6 +65,18 @@ import { DiscoveryFeedPage } from "../pages/DiscoveryFeedPage"
 describe("DiscoveryFeedPage Amap route flow", () => {
   beforeEach(() => {
     mocks.fetchUgcFeed.mockResolvedValue([])
+    mocks.fetchUserFacts.mockResolvedValue({
+      user_id: "mock_user",
+      typical_budget_range: null,
+      typical_party_type: null,
+      typical_time_windows: [],
+      favorite_districts: [],
+      favorite_categories: [],
+      avoid_categories: [],
+      rejected_poi_ids: [],
+      session_count: 0,
+      updated_at: "2026-05-14T10:00:00Z"
+    })
   })
 
   it("keeps UGC onboarding but routes generation through the Amap route page", async () => {

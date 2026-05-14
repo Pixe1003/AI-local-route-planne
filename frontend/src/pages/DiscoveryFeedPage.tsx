@@ -3,6 +3,7 @@ import { FormEvent, useEffect, useMemo, useState } from "react"
 import { useNavigate } from "react-router-dom"
 
 import { runAgentRoute } from "../api/agent"
+import { UserMemoryPanel } from "../components/UserMemoryPanel"
 import { fetchUgcFeed } from "../api/ugc"
 import { useAmapRouteStore } from "../store/amapRouteStore"
 import { usePoolStore } from "../store/poolStore"
@@ -124,6 +125,7 @@ export function DiscoveryFeedPage() {
         source: "ugc_instant_route",
         pool_id: agentResult.pool?.pool_id,
         session_id: agentResult.session_id,
+        route_chain: agentResult.route_chain ?? null,
         story_plan: agentResult.story_plan ?? null,
         agent_steps: agentResult.steps,
         free_text: query,
@@ -187,6 +189,8 @@ export function DiscoveryFeedPage() {
           清零
         </button>
       </section>
+
+      <UserMemoryPanel userId={userId} />
 
       {feedError ? <p className="error-text">{feedError}</p> : null}
       <section className="ugc-feed-grid">

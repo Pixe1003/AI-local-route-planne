@@ -1,6 +1,7 @@
 from app.schemas.onboarding import UserNeedProfile
 from app.schemas.plan import PlanContext, ScoreBreakdown, StructuredIntent
 from app.schemas.preferences import PreferenceSnapshot
+from app.schemas.user_memory import UserFacts
 from app.repositories.ugc_vector_repo import UgcVectorRepo, get_ugc_vector_repo
 
 
@@ -17,6 +18,7 @@ class PoiScoringService:
         profile: UserNeedProfile | None = None,
         preference_snapshot: PreferenceSnapshot | None = None,
         free_text: str | None = None,
+        user_facts: UserFacts | None = None,
     ) -> ScoreBreakdown:
         text = " ".join(
             [
@@ -33,6 +35,7 @@ class PoiScoringService:
         ugc_match = self._ugc_match_score(poi, text)
         service_closure = 8.0 if poi.price_per_person is not None else 4.0
         history_preference = self._history_preference_score(poi, preference_snapshot)
+        fact_alignment = self._fact_alignment_score(poi, user_facts)
         queue_penalty = self._queue_penalty(poi, intent, text)
         price_penalty = self._price_penalty(poi, intent, profile)
         distance_penalty = 0.0
@@ -44,6 +47,7 @@ class PoiScoringService:
             + ugc_match
             + service_closure
             + history_preference
+            + fact_alignment
             + queue_penalty
             + price_penalty
             + distance_penalty
@@ -56,6 +60,7 @@ class PoiScoringService:
             ugc_match=round(ugc_match, 2),
             service_closure=round(service_closure, 2),
             history_preference=round(history_preference, 2),
+            fact_alignment=round(fact_alignment, 2),
             queue_penalty=round(queue_penalty, 2),
             price_penalty=round(price_penalty, 2),
             distance_penalty=round(distance_penalty, 2),
@@ -120,6 +125,24 @@ class PoiScoringService:
         for item in poi.high_freq_keywords:
             score += snapshot.keyword_weights.get(str(item.get("keyword", "")), 0.0) * 1.5
         return max(-16.0, min(score, 22.0))
+
+    def _fact_alignment_score(self, poi, facts: UserFacts | None) -> float:
+        if facts is None or facts.session_count <= 0:
+            return 0.0
+        if poi.id in facts.rejected_poi_ids:
+            return -16.0
+        score = 0.0
+        if poi.category in facts.favorite_categories:
+            score += 6.0
+        if poi.category in facts.avoid_categories:
+            score -= 10.0
+        if facts.favorite_districts and any(district in poi.address for district in facts.favorite_districts):
+            score += 2.0
+        if facts.typical_budget_range and poi.price_per_person:
+            _, high = facts.typical_budget_range
+            if poi.price_per_person > high:
+                score -= 4.0
+        return max(-16.0, min(score, 10.0))
 
     def _queue_penalty(self, poi, intent: StructuredIntent | None, text: str) -> float:
         penalty = -min(poi.queue_estimate["weekend_peak"] / 60 * 12, 12)

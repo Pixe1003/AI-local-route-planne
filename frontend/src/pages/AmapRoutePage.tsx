@@ -26,6 +26,16 @@ export function AmapRoutePage() {
   useEffect(() => {
     if (!routeRequest || routeRequest.poi_ids.length < 2) return
 
+    if (
+      routeRequest.route_chain &&
+      routeChainMatchesRequest(routeRequest.route_chain, routeRequest.poi_ids, routeRequest.mode)
+    ) {
+      setRouteResult(routeRequest.route_chain)
+      setLoading(false)
+      setError(null)
+      return
+    }
+
     let cancelled = false
     setLoading(true)
     setError(null)
@@ -117,6 +127,7 @@ export function AmapRoutePage() {
             ...routeRequest,
             poi_ids: nextPoiIds,
             session_id: response.session_id,
+            route_chain: response.route_chain ?? null,
             story_plan: response.story_plan ?? routeRequest.story_plan ?? null,
             agent_steps: response.steps,
             free_text: routeRequest.free_text
@@ -143,6 +154,7 @@ export function AmapRoutePage() {
         setRouteRequest({
           ...routeRequest,
           poi_ids: nextPoiIds,
+          route_chain: null,
           free_text: routeRequest.free_text
             ? `${routeRequest.free_text}；${feedback.trim()}`
             : feedback.trim()
@@ -293,4 +305,10 @@ function formatDuration(durationS: number) {
   const hours = Math.floor(minutes / 60)
   const restMinutes = minutes % 60
   return restMinutes ? `${hours} 小时 ${restMinutes} 分钟` : `${hours} 小时`
+}
+
+function routeChainMatchesRequest(routeChain: RouteChainResponse, poiIds: string[], mode: string) {
+  if (routeChain.mode !== mode) return false
+  const routePoiIds = routeChain.ordered_pois.map(poi => poi.id)
+  return routePoiIds.length === poiIds.length && routePoiIds.every((poiId, index) => poiId === poiIds[index])
 }

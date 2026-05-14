@@ -69,6 +69,7 @@ class ScoreBreakdown(BaseModel):
     ugc_match: float = 0.0
     service_closure: float = 0.0
     history_preference: float = 0.0
+    fact_alignment: float = 0.0
     queue_penalty: float = 0.0
     price_penalty: float = 0.0
     distance_penalty: float = 0.0
