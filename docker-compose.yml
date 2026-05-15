@@ -1,0 +1,44 @@
+﻿services:
+  postgres:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: local_route
+      POSTGRES_PASSWORD: local_route
+      POSTGRES_DB: local_route
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  backend:
+    build:
+      context: ./backend
+    environment:
+      LLM_PROVIDER: ${LLM_PROVIDER:-longcat}
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      LLM_MODEL: ${LLM_MODEL:-LongCat-Flash-Chat}
+      LLM_BASE_URL: ${LLM_BASE_URL:-https://api.longcat.chat/openai/v1}
+      LLM_AUTH_HEADER: ${LLM_AUTH_HEADER:-authorization}
+      LLM_TIMEOUT_SECONDS: ${LLM_TIMEOUT_SECONDS:-30}
+      DATABASE_URL: postgresql://local_route:local_route@postgres:5432/local_route
+      VECTOR_DB_PATH: /app/data/chroma
+      DEFAULT_CITY: shanghai
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data:/app/data
+    depends_on:
+      - postgres
+
+  frontend:
+    build:
+      context: ./frontend
+    environment:
+      VITE_API_BASE_URL: /api
+    ports:
+      - "5173:5173"
+    depends_on:
+      - backend
+
+volumes:
+  postgres_data:

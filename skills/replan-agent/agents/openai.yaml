@@ -1,0 +1,4 @@
+interface:
+  display_name: "Replan Agent"
+  short_description: "Dynamic route replanning rules for AIroute"
+  default_prompt: "Use $replan-agent to design or review AIroute dynamic replanning changes."
