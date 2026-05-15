@@ -1,6 +1,12 @@
 from functools import lru_cache
+import os
+from pathlib import Path
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+BACKEND_ROOT = Path(__file__).resolve().parents[1]
+PROJECT_ROOT = BACKEND_ROOT.parent
 
 
 class Settings(BaseSettings):
@@ -23,9 +29,15 @@ class Settings(BaseSettings):
     amap_route_timeout_seconds: float = 15.0
     agent_tool_calling_enabled: bool = True
 
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+    model_config = SettingsConfigDict(
+        env_file=(PROJECT_ROOT / ".env", BACKEND_ROOT / ".env"),
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
 
 
 @lru_cache
 def get_settings() -> Settings:
+    if os.getenv("LOCAL_ROUTE_DISABLE_ENV_FILE") == "1":
+        return Settings(_env_file=None)
     return Settings()

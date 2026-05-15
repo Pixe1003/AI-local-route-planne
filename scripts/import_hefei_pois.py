@@ -201,7 +201,6 @@ def build_record(row: pd.Series) -> dict[str, Any] | None:
         "type": text_or_none(row.get("type")),
         "typecode": text_or_none(row.get("typecode")),
         "address": text_or_none(row.get("address")),
-        "tel": text_or_none(row.get("tel")),
         "province_code": text_or_none(row.get("pcode")),
         "province_name": text_or_none(row.get("pname")),
         "city_code": text_or_none(row.get("citycode")),
@@ -226,18 +225,6 @@ def build_record(row: pd.Series) -> dict[str, Any] | None:
         "atmosphere_json": json_text(atmosphere(row)),
         "visit_duration": visit_duration(row),
         "cover_image": None,
-        "raw_data_json": json_text(
-            {
-                "FID": clean_int(row.get("FID")),
-                "type": text_or_none(row.get("type")),
-                "distance": clean_float(row.get("distance")),
-                "gridcode": text_or_none(row.get("gridcode")),
-                "biz_ext": biz_ext,
-                "行业大": text_or_none(row.get("行业大")),
-                "行业中": text_or_none(row.get("行业中")),
-                "行业小": text_or_none(row.get("行业小")),
-            }
-        ),
         "source_updated_at": timestamp,
     }
 
@@ -258,7 +245,6 @@ CREATE TABLE pois (
   type TEXT,
   typecode TEXT,
   address TEXT,
-  tel TEXT,
   province_code TEXT,
   province_name TEXT,
   city_code TEXT,
@@ -281,7 +267,6 @@ CREATE TABLE pois (
   atmosphere_json TEXT NOT NULL DEFAULT '[]',
   visit_duration INTEGER NOT NULL DEFAULT 55,
   cover_image TEXT,
-  raw_data_json TEXT NOT NULL DEFAULT '{}',
   source_updated_at TEXT,
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP

@@ -1,7 +1,9 @@
 import react from "@vitejs/plugin-react";
+import { realpathSync } from "node:fs";
 import { defineConfig } from "vitest/config";
 
-export default defineConfig({
+export default defineConfig(({ command }) => ({
+  root: command === "build" ? realpathSync(process.cwd()) : undefined,
   plugins: [react()],
   server: {
     host: "127.0.0.1",
@@ -16,4 +18,4 @@ export default defineConfig({
     setupFiles: "./src/test/setup.ts",
     exclude: ["**/node_modules/**", "**/dist/**", "e2e/**"]
   }
-});
+}));

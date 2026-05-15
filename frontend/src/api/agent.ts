@@ -8,8 +8,3 @@ export async function runAgentRoute(request: AgentRunRequest): Promise<AgentRunR
 export async function adjustAgentRoute(request: AgentAdjustRequest): Promise<AgentRunResponse> {
   return apiClient.post<AgentRunResponse, AgentRunResponse>("/agent/adjust", request)
 }
-
-export function agentTraceStreamUrl(sessionId: string): string {
-  const base = import.meta.env.VITE_API_BASE_URL || "/api"
-  return `${base.replace(/\/$/, "")}/agent/stream/${sessionId}`
-}

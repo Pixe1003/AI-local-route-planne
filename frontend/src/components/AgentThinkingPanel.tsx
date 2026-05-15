@@ -28,7 +28,6 @@ export function AgentThinkingPanel({ steps }: AgentThinkingPanelProps) {
         {steps.map((step, index) => (
           <li key={`${step.tool_name}-${index}`}>
             <span>{labels[step.tool_name] ?? step.tool_name}</span>
-            {step.latency_ms ? <small>{step.latency_ms} ms</small> : null}
             {step.observation_summary ? <p>{step.observation_summary}</p> : null}
           </li>
         ))}

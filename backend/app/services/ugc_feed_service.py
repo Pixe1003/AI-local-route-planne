@@ -5,6 +5,9 @@ from app.schemas.ugc import UgcFeedItem, UgcReview
 
 class UgcFeedService:
     SOURCE_BY_INDEX = ["xiaohongshu", "dianping", "meituan"]
+    DINING_CATEGORIES = {"restaurant", "cafe"}
+    EXPERIENCE_CATEGORIES = {"scenic", "culture", "outdoor", "entertainment", "nightlife"}
+    SHOPPING_CATEGORIES = {"shopping"}
 
     TITLE_BY_CATEGORY = {
         "restaurant": "本地餐饮真实体验",
@@ -53,8 +56,79 @@ class UgcFeedService:
         return cards
 
     def _list_ugc_cards(self, *, city: str, limit: int) -> list[UgcFeedItem]:
-        reviews = self.ugc_repo.list_reviews(city=city, limit=limit)
-        return [self._review_to_card(review, index) for index, review in enumerate(reviews)]
+        reviews = self.ugc_repo.list_reviews(city=city)
+        if not reviews:
+            return []
+        selected = self._balanced_reviews(reviews, limit=limit)
+        return [self._review_to_card(review, index) for index, review in enumerate(selected)]
+
+    def _balanced_reviews(self, reviews: list[UgcReview], *, limit: int) -> list[UgcReview]:
+        if limit <= 0:
+            return []
+        dining_target, experience_target, shopping_target = self._feed_targets(limit)
+        selected: list[UgcReview] = []
+        used_indexes: set[int] = set()
+
+        self._take_reviews(
+            reviews,
+            selected,
+            used_indexes,
+            categories=self.DINING_CATEGORIES,
+            count=dining_target,
+        )
+        self._take_reviews(
+            reviews,
+            selected,
+            used_indexes,
+            categories=self.EXPERIENCE_CATEGORIES,
+            count=experience_target,
+        )
+        self._take_reviews(
+            reviews,
+            selected,
+            used_indexes,
+            categories=self.SHOPPING_CATEGORIES,
+            count=shopping_target,
+        )
+
+        if len(selected) < limit:
+            self._take_reviews(reviews, selected, used_indexes, categories=None, count=limit - len(selected))
+        return selected[:limit]
+
+    def _feed_targets(self, limit: int) -> tuple[int, int, int]:
+        if limit <= 2:
+            return limit, 0, 0
+        dining = max(1, round(limit * 0.65))
+        experience = max(1, round(limit * 0.22))
+        shopping = max(0, limit - dining - experience)
+        if limit >= 6:
+            shopping = max(1, shopping)
+        while dining + experience + shopping > limit:
+            dining -= 1
+        return dining, experience, shopping
+
+    def _take_reviews(
+        self,
+        reviews: list[UgcReview],
+        selected: list[UgcReview],
+        used_indexes: set[int],
+        *,
+        categories: set[str] | None,
+        count: int,
+    ) -> None:
+        if count <= 0:
+            return
+        added = 0
+        for index, review in enumerate(reviews):
+            if index in used_indexes:
+                continue
+            if categories is not None and review.category not in categories:
+                continue
+            selected.append(review)
+            used_indexes.add(index)
+            added += 1
+            if added >= count:
+                return
 
     def _review_to_card(self, review: UgcReview, index: int) -> UgcFeedItem:
         return UgcFeedItem(

@@ -1,5 +1,3 @@
-import asyncio
-import json
 from uuid import uuid4
 
 from fastapi import APIRouter, HTTPException
@@ -11,7 +9,7 @@ from app.agent.state import AgentGoal, AgentState, Critique, ToolCall
 from app.agent.story_models import StoryPlan
 from app.agent.store import load_state, save_state
 from app.agent.tools import get_tool_registry
-from app.agent.tracing import get_trace_events, subscribe, unsubscribe
+from app.agent.tracing import format_sse, get_trace_events
 from app.llm.client import LlmClient
 from app.schemas.onboarding import UserNeedProfile
 from app.schemas.plan import PlanContext, ValidationResult
@@ -55,13 +53,9 @@ class AgentRunResponse(BaseModel):
 
 
 @router.post("/run", response_model=AgentRunResponse)
-async def run_agent(request: AgentRunRequest) -> AgentRunResponse:
+def run_agent(request: AgentRunRequest) -> AgentRunResponse:
     state = build_initial_state(request)
-    loop = asyncio.get_running_loop()
-    final = await loop.run_in_executor(
-        None,
-        lambda: Conductor(get_tool_registry(), LlmClient()).run(state),
-    )
+    final = Conductor(get_tool_registry(), LlmClient()).run(state)
     save_state(final)
     return _response_from_state(final)
 
@@ -85,36 +79,13 @@ def get_trace(session_id: str) -> AgentRunResponse:
     return _response_from_state(state)
 
 
-@router.get("/tools")
-def list_agent_tools() -> list[dict]:
-    return get_tool_registry().schemas_for_llm()
-
-
 @router.get("/stream/{session_id}")
-async def stream_trace(session_id: str) -> StreamingResponse:
-    async def gen():
-        queue = subscribe(session_id)
-        try:
-            for event in get_trace_events(session_id):
-                yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
-                if event.get("type") in {"finished", "failed"}:
-                    return
-            while True:
-                try:
-                    event = await asyncio.wait_for(queue.get(), timeout=30.0)
-                except asyncio.TimeoutError:
-                    yield ": keepalive\n\n"
-                    continue
-                yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
-                if event.get("type") in {"finished", "failed"}:
-                    break
-        finally:
-            unsubscribe(session_id, queue)
-
+def stream_trace(session_id: str) -> StreamingResponse:
+    if load_state(session_id) is None:
+        raise HTTPException(status_code=404, detail="Agent session not found")
     return StreamingResponse(
-        gen(),
+        iter([format_sse(get_trace_events(session_id))]),
         media_type="text/event-stream",
-        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
 
 

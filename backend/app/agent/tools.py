@@ -147,11 +147,16 @@ def _recommend_pool(state: AgentState, args: dict[str, Any]) -> ToolResult:
         need_profile=state.profile,
         preference_snapshot=state.preference,
     )
-    pool = PoolService().generate_pool(request)
+    service = PoolService()
+    pool = service.generate_pool(request)
+    retrieval_stats = getattr(service, "last_retrieval_stats", {})
     return ToolResult(
         observation_summary=(
             f"Generated candidate pool with {pool.meta.total_count} POIs "
-            f"and {len(pool.default_selected_ids)} default route ids."
+            f"and {len(pool.default_selected_ids)} default route ids; "
+            f"retrieve_candidates={retrieval_stats.get('total_candidates', 0)} "
+            f"rerank_candidates={retrieval_stats.get('rerank_candidates', 0)} "
+            f"pool_selected={retrieval_stats.get('pool_selected', pool.meta.total_count)}."
         ),
         payload=pool,
         memory_patch={"pool": pool},

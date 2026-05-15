@@ -2,14 +2,13 @@ import { ArrowLeft, Clock3, MapPin, Route } from "lucide-react"
 import { FormEvent, useEffect, useMemo, useState } from "react"
 import { useNavigate } from "react-router-dom"
 
-import { adjustAgentRoute, agentTraceStreamUrl } from "../api/agent"
+import { adjustAgentRoute } from "../api/agent"
 import { adjustRouteRecommendation } from "../api/chat"
 import { createRouteChain } from "../api/route"
 import { AgentThinkingPanel } from "../components/AgentThinkingPanel"
 import { AmapRouteMap } from "../components/AmapRouteMap"
 import { useAmapRouteStore } from "../store/amapRouteStore"
 import type { RouteChainResponse } from "../types/route"
-import type { AgentToolCall } from "../types/agent"
 
 export function AmapRoutePage() {
   const navigate = useNavigate()
@@ -21,7 +20,6 @@ export function AmapRoutePage() {
   const [feedback, setFeedback] = useState("")
   const [feedbackMessage, setFeedbackMessage] = useState<string | null>(null)
   const [feedbackLoading, setFeedbackLoading] = useState(false)
-  const [agentSteps, setAgentSteps] = useState<AgentToolCall[]>(routeRequest?.agent_steps ?? [])
 
   useEffect(() => {
     if (!routeRequest || routeRequest.poi_ids.length < 2) return
@@ -50,39 +48,6 @@ export function AmapRoutePage() {
       cancelled = true
     }
   }, [routeRequest])
-
-  useEffect(() => {
-    setAgentSteps(routeRequest?.agent_steps ?? [])
-    if (!routeRequest?.session_id || typeof EventSource === "undefined") return
-
-    const source = new EventSource(agentTraceStreamUrl(routeRequest.session_id))
-    setAgentSteps([])
-    source.onmessage = event => {
-      const payload = JSON.parse(event.data) as {
-        type?: string
-        tool?: string
-        args?: Record<string, unknown>
-        observation_summary?: string
-        latency_ms?: number
-      }
-      if (payload.type !== "observed" || !payload.tool) return
-      setAgentSteps(current => [
-        ...current,
-        {
-          tool_name: payload.tool ?? "unknown",
-          args: payload.args ?? {},
-          observation_summary: payload.observation_summary ?? null,
-          latency_ms: payload.latency_ms ?? 0
-        }
-      ])
-    }
-    source.onerror = () => {
-      source.close()
-    }
-    return () => {
-      source.close()
-    }
-  }, [routeRequest?.agent_steps, routeRequest?.session_id])
 
   const storyPlan = routeRequest?.story_plan ?? null
   const storyByPoiId = useMemo(
@@ -215,7 +180,7 @@ export function AmapRoutePage() {
         ) : null}
         {error ? <p className="route-panel-alert error">{error}</p> : null}
 
-        <AgentThinkingPanel steps={agentSteps} />
+        <AgentThinkingPanel steps={routeRequest.agent_steps ?? []} />
 
         <form className="route-feedback-form" data-testid="route-feedback-form" onSubmit={submitFeedback}>
           <label>

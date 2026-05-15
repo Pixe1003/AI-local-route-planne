@@ -36,10 +36,7 @@ class RouteValidator:
             issues.append(ValidationIssue(code="too_few_pois", message="路线至少需要串联 3 个 POI。"))
         if "restaurant" not in route_categories:
             issues.append(ValidationIssue(code="meal_missing", message="路线需要包含至少 1 个餐饮点。"))
-        if (
-            not route_categories & self.EXPERIENCE_CATEGORIES
-            and self._catalog_has_experience(context.city if context else None)
-        ):
+        if not route_categories & self.EXPERIENCE_CATEGORIES:
             issues.append(
                 ValidationIssue(
                     code="experience_missing",
@@ -115,18 +112,6 @@ class RouteValidator:
             issues=issues,
             repaired_count=repaired_count,
         )
-
-    def _catalog_has_experience(self, city: str | None) -> bool:
-        cities = [city] if city else []
-        if city != "hefei":
-            cities.append("hefei")
-        for candidate_city in cities:
-            if not candidate_city:
-                continue
-            categories = {poi.category for poi in self.repo.list_by_city(candidate_city)}
-            if categories & self.EXPERIENCE_CATEGORIES:
-                return True
-        return False
 
     def _is_open(self, poi, date: str, arrival_time: str) -> bool:
         try:

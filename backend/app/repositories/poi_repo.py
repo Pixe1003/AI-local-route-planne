@@ -10,6 +10,10 @@ from app.schemas.poi import HighlightQuote, PoiDetail
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 DEFAULT_POI_DB_PATH = PROJECT_ROOT / "data" / "processed" / "hefei_pois.sqlite"
+EXTRA_POI_DB_PATHS = [
+    PROJECT_ROOT / "data" / "processed" / "hefei_scenic_pois.sqlite",
+    PROJECT_ROOT / "data" / "processed" / "hefei_shopping_pois.sqlite",
+]
 
 
 class PoiRepository:
@@ -17,12 +21,13 @@ class PoiRepository:
         self._pois = self._load_pois()
 
     def _load_pois(self) -> dict[str, PoiDetail]:
+        pois = {poi.id: poi for poi in load_seed_pois()}
         if DEFAULT_POI_DB_PATH.exists():
-            pois = self._load_sqlite_pois(DEFAULT_POI_DB_PATH)
-            if pois:
-                seed_pois = {poi.id: poi for poi in load_seed_pois()}
-                return {**seed_pois, **pois}
-        return {poi.id: poi for poi in load_seed_pois()}
+            pois.update(self._load_sqlite_pois(DEFAULT_POI_DB_PATH))
+        for db_path in EXTRA_POI_DB_PATHS:
+            if db_path.exists():
+                pois.update(self._load_sqlite_pois(db_path))
+        return pois
 
     def _load_sqlite_pois(self, db_path: Path) -> dict[str, PoiDetail]:
         with sqlite3.connect(db_path) as conn:

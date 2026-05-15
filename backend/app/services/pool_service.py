@@ -5,6 +5,7 @@ from app.repositories.poi_repo import get_poi_repository
 from app.repositories.vector_repo import VectorRepository
 from app.schemas.pool import PoiInPool, PoolCategory, PoolMeta, PoolRequest, PoolResponse
 from app.services.agent_skill_registry import get_agent_skill_registry
+from app.services.poi_retrieval_service import PoiRetrievalService
 from app.services.poi_scoring_service import PoiScoringService
 from app.services.state import POOL_REGISTRY
 from app.solver.distance import haversine_meters
@@ -33,7 +34,9 @@ class PoolService:
         "outdoor",
     ]
 
-    EXPERIENCE_CATEGORIES = {"culture", "scenic", "entertainment", "nightlife"}
+    DINING_CATEGORIES = {"restaurant", "cafe"}
+    EXPERIENCE_CATEGORIES = {"culture", "scenic", "entertainment", "nightlife", "outdoor"}
+    SHOPPING_CATEGORIES = {"shopping"}
 
     def __init__(self) -> None:
         self.agent_skill = get_agent_skill_registry().get_skill("recommend")
@@ -41,6 +44,8 @@ class PoolService:
         self.vector_repo = VectorRepository()
         self.poi_scorer = PoiScoringService()
         self.ugc_repo = self.poi_scorer.ugc_repo
+        self.retrieval_service = PoiRetrievalService(repo=self.repo)
+        self.last_retrieval_stats: dict[str, int] = {}
 
     def generate_pool(self, request: PoolRequest) -> PoolResponse:
         profile = request.need_profile
@@ -52,9 +57,20 @@ class PoolService:
             else request.budget_per_person
         )
         city = profile.destination.city if profile else request.city
-        candidates = self.repo.list_by_city(city)
-        if not candidates and city != "hefei":
-            candidates = self.repo.list_by_city("hefei")
+        retrieval = self.retrieval_service.retrieve_with_stats(request, limit=300)
+        candidates = self.repo.get_many(retrieval.poi_ids)
+        self.last_retrieval_stats = {
+            **retrieval.stats,
+            "rerank_candidates": len(candidates),
+        }
+        if not candidates:
+            candidates = self.repo.list_by_city(city)
+            if not candidates and city != "hefei":
+                candidates = self.repo.list_by_city("hefei")
+            self.last_retrieval_stats = {
+                "total_candidates": len(candidates),
+                "rerank_candidates": len(candidates),
+            }
         scored = sorted(
             (
                 (
@@ -72,7 +88,8 @@ class PoolService:
             key=lambda item: item[0],
             reverse=True,
         )
-        selected = self._diverse_candidates(scored, limit=24)
+        selected = self._select_balanced_pool(scored, request=request, limit=24)
+        self.last_retrieval_stats["pool_selected"] = len(selected)
         grouped: dict[str, list[PoiInPool]] = {}
         for score, poi in selected:
             breakdown = self.poi_scorer.score_poi(
@@ -158,25 +175,6 @@ class PoolService:
             ),
         )
 
-    def _diverse_candidates(self, scored, *, limit: int):
-        selected: list[tuple[float, object]] = []
-        selected_ids: set[str] = set()
-
-        for category in self.CATEGORY_ORDER:
-            item = next((entry for entry in scored if entry[1].category == category), None)
-            if item and item[1].id not in selected_ids:
-                selected.append(item)
-                selected_ids.add(item[1].id)
-
-        for item in scored:
-            if len(selected) >= limit:
-                break
-            if item[1].id in selected_ids:
-                continue
-            selected.append(item)
-            selected_ids.add(item[1].id)
-        return selected[:limit]
-
     def _why_recommend(
         self,
         name: str,
@@ -193,6 +191,9 @@ class PoolService:
         return f"{name}和本次需求匹配度较高，适合作为路线候选。"
 
     def _highlight_quote(self, poi, free_text: str | None) -> str | None:
+        indexed_quote = self.retrieval_service.evidence_for_poi(poi.id, free_text)
+        if indexed_quote:
+            return indexed_quote
         hits = self.ugc_repo.evidence_for_poi(poi.id, free_text or "", top_k=1)
         if hits:
             return hits[0].snippet
@@ -210,6 +211,7 @@ class PoolService:
 
         self._append_best_category(defaults, all_pois, {"restaurant"}, request)
         self._append_best_category(defaults, all_pois, self.EXPERIENCE_CATEGORIES, request)
+        self._append_best_category(defaults, all_pois, self.SHOPPING_CATEGORIES, request)
         for poi in sorted(all_pois, key=lambda item: item.suitable_score, reverse=True):
             if poi.id not in defaults and self._reasonable_for_main_route(poi, request):
                 defaults.append(poi.id)
@@ -284,6 +286,72 @@ class PoolService:
         if pool is None:
             return []
         return [poi for category in pool.categories for poi in category.pois]
+
+    def _select_balanced_pool(
+        self,
+        scored: list[tuple[float, object]],
+        *,
+        request: PoolRequest,
+        limit: int,
+    ) -> list[tuple[float, object]]:
+        if limit <= 0:
+            return []
+        dining_target, experience_target, shopping_target = self._pool_targets(limit, request)
+        selected: list[tuple[float, object]] = []
+        used_ids: set[str] = set()
+
+        self._take_scored(scored, selected, used_ids, categories=self.DINING_CATEGORIES, count=dining_target)
+        self._take_scored(scored, selected, used_ids, categories=self.EXPERIENCE_CATEGORIES, count=experience_target)
+        self._take_scored(scored, selected, used_ids, categories=self.SHOPPING_CATEGORIES, count=shopping_target)
+        if len(selected) < limit:
+            self._take_scored(scored, selected, used_ids, categories=None, count=limit - len(selected))
+        return selected[:limit]
+
+    def _pool_targets(self, limit: int, request: PoolRequest) -> tuple[int, int, int]:
+        dining = max(1, round(limit * 0.58))
+        experience = max(1, round(limit * 0.29))
+        shopping = max(0, limit - dining - experience)
+        if limit >= 6:
+            shopping = max(1, shopping)
+
+        text = (request.free_text or "").lower()
+        avoids_shopping = self._request_avoids_shopping(text)
+        if avoids_shopping:
+            shopping = 0
+        if not avoids_shopping and any(
+            token in text for token in ["shopping", "mall", "shop", "商场", "购物", "逛街", "步行街", "商业街"]
+        ):
+            shopping = max(shopping, min(4, round(limit * 0.2)))
+        if any(token in text for token in ["scenic", "park", "walk", "景点", "公园", "文化", "展览", "散步", "拍照"]):
+            experience = max(experience, round(limit * 0.33))
+
+        while dining + experience + shopping > limit:
+            dining -= 1
+        return dining, experience, shopping
+
+    def _take_scored(
+        self,
+        scored: list[tuple[float, object]],
+        selected: list[tuple[float, object]],
+        used_ids: set[str],
+        *,
+        categories: set[str] | None,
+        count: int,
+    ) -> None:
+        if count <= 0:
+            return
+        added = 0
+        for score, poi in scored:
+            poi_id = getattr(poi, "id", None)
+            if not poi_id or poi_id in used_ids:
+                continue
+            if categories is not None and getattr(poi, "category", None) not in categories:
+                continue
+            selected.append((score, poi))
+            used_ids.add(poi_id)
+            added += 1
+            if added >= count:
+                return
 
     def _feedback_avoid_categories(self, feedback_text: str) -> set[str]:
         if any(keyword in feedback_text for keyword in ["不要商场", "不去商场", "别去商场", "少逛街"]):
@@ -369,12 +437,17 @@ class PoolService:
                 defaults.append(best.id)
 
     def _reasonable_for_main_route(self, poi: PoiInPool, request: PoolRequest) -> bool:
+        if poi.category == "shopping" and self._request_avoids_shopping(request.free_text or ""):
+            return False
         if request.budget_per_person and poi.price_per_person:
             if poi.price_per_person > request.budget_per_person:
                 return False
         if "少排队" in (request.free_text or "") and (poi.estimated_queue_min or 0) > 45:
             return False
         return True
+
+    def _request_avoids_shopping(self, text: str) -> bool:
+        return any(keyword in text for keyword in ["不要商场", "不去商场", "别去商场", "少逛街"])
 
     def _persona_summary(
         self,

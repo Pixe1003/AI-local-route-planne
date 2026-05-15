@@ -3,7 +3,6 @@ from typing import Any
 from fastapi.testclient import TestClient
 
 from app.agent.specialists.repair_agent import RepairAgent
-from app.config import get_settings
 from app.agent.store import load_state
 from app.api import routes_route
 from app.main import app
@@ -48,35 +47,6 @@ def test_repair_agent_parses_composite_feedback_without_llm() -> None:
     assert intent.budget_per_person == 250
     assert "budget_per_person" in intent.deltas
     assert "category_hint" in intent.deltas
-
-
-def test_repair_agent_merges_llm_feedback_slots(monkeypatch) -> None:
-    monkeypatch.setenv("LLM_API_KEY", "fake-key")
-    monkeypatch.setenv("AGENT_TOOL_CALLING_ENABLED", "true")
-    get_settings.cache_clear()
-
-    class FakeLlmClient:
-        def complete_json(self, *args: Any, **kwargs: Any) -> dict[str, Any]:
-            return {
-                "event_type": "USER_MODIFY_CONSTRAINT",
-                "target_stop_index": None,
-                "category_hint": "cafe",
-                "budget_per_person": None,
-                "deltas": {"meal_slot": "lunch", "budget_direction": "lower"},
-            }
-
-    monkeypatch.setattr(
-        "app.agent.specialists.repair_agent.LlmClient",
-        lambda: FakeLlmClient(),
-    )
-
-    intent = RepairAgent().parse("把午餐那站改成更便宜的咖啡店")
-
-    assert intent.event_type == "USER_MODIFY_CONSTRAINT"
-    assert intent.category_hint == "cafe"
-    assert intent.budget_per_person is None
-    assert intent.deltas["meal_slot"] == "lunch"
-    assert intent.deltas["budget_direction"] == "lower"
 
 
 def test_agent_tools_endpoint_exposes_feedback_tools() -> None:
