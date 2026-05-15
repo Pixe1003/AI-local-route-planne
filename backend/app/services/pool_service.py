@@ -149,7 +149,7 @@ class PoolService:
         budget_penalty = 0.0
         if budget_per_person and poi.price_per_person and poi.price_per_person > budget_per_person:
             budget_penalty = min((poi.price_per_person - budget_per_person) / max(budget_per_person, 1), 2) * 0.18
-        return max(
+        return float(max(
             0,
             min(
                 1,
@@ -162,7 +162,7 @@ class PoolService:
                 + ugc_bonus
                 - budget_penalty,
             ),
-        )
+        ))
 
     def _diverse_candidates(self, scored, *, limit: int):
         selected: list[tuple[float, object]] = []

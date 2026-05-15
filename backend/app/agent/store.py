@@ -2,6 +2,7 @@ import sqlite3
 import threading
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any, cast
 
 from app.agent.state import AgentState
 
@@ -92,6 +93,25 @@ def list_sessions(user_id: str, limit: int = 20) -> list[AgentState]:
             (user_id, limit),
         ).fetchall()
     return [AgentState.model_validate_json(row[0]) for row in rows]
+
+
+def session_cost_summary(session_id: str) -> dict[str, Any]:
+    state = load_state(session_id)
+    if state is None:
+        return {}
+    total_tokens = sum(step.tokens_used for step in state.steps)
+    total_latency = sum(step.latency_ms for step in state.steps)
+    return {
+        "session_id": session_id,
+        "total_tokens": total_tokens,
+        "total_latency_ms": total_latency,
+        "tool_count": len(state.steps),
+        "tools_by_latency": sorted(
+            [{"name": step.tool_name, "ms": step.latency_ms} for step in state.steps],
+            key=lambda item: -cast(int, item["ms"]),
+        )[:5],
+        "estimated_cost_usd": round(total_tokens * 0.0000002, 6),
+    }
 
 
 def _invalidate_user_facts(user_id: str) -> None:

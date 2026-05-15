@@ -62,6 +62,17 @@ class AgentMemory(BaseModel):
     similar_sessions_searched: bool = False
 
 
+AgentPhase = Literal[
+    "UNDERSTANDING",
+    "RETRIEVING",
+    "COMPOSING",
+    "CHECKING",
+    "PRESENTING",
+    "DONE",
+    "FAILED",
+]
+
+
 class AgentState(BaseModel):
     goal: AgentGoal
     profile: UserNeedProfile
@@ -69,14 +80,6 @@ class AgentState(BaseModel):
     context: PlanContext
     steps: list[ToolCall] = Field(default_factory=list)
     memory: AgentMemory = Field(default_factory=AgentMemory)
-    phase: Literal[
-        "UNDERSTANDING",
-        "RETRIEVING",
-        "COMPOSING",
-        "CHECKING",
-        "PRESENTING",
-        "DONE",
-        "FAILED",
-    ] = "UNDERSTANDING"
+    phase: AgentPhase = "UNDERSTANDING"
     version: int = 1
     trace_id: str = Field(default_factory=lambda: uuid4().hex)

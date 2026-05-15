@@ -36,3 +36,18 @@ Reads a persisted agent session from SQLite and prints the tool trace.
 ```powershell
 python scripts/replay_trace.py {session_id}
 ```
+
+## `warmup_demo_sessions.py`
+
+Posts several demo `/api/agent/run` requests for `demo_user` so user facts and similar-session memory have content for demos. Start the backend first.
+
+```powershell
+python scripts/warmup_demo_sessions.py
+```
+
+To target a non-default backend URL:
+
+```powershell
+$env:AIROUTE_API_BASE_URL='http://127.0.0.1:8000'
+python scripts/warmup_demo_sessions.py
+```

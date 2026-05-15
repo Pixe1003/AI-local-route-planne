@@ -14,6 +14,7 @@ from app.schemas.plan import (
     RouteSkeleton,
     StructuredIntent,
 )
+from app.schemas.pool import TimeWindow
 from app.schemas.preferences import PreferenceSnapshot
 from app.services.agent_skill_registry import get_agent_skill_registry
 from app.services.intent_service import IntentService
@@ -217,7 +218,7 @@ class PlanService:
                 delta = (poi.visit_duration + min(poi.queue_estimate["weekend_peak"], 30)) - (
                     old_poi.visit_duration + min(old_poi.queue_estimate["weekend_peak"], 30)
                 )
-            liked = preference_snapshot and poi.id in preference_snapshot.liked_poi_ids
+            liked = bool(preference_snapshot and poi.id in preference_snapshot.liked_poi_ids)
             reason = self._alternative_reason(poi, score, liked, intent)
             alternatives.append(
                 AlternativePoi(
@@ -293,11 +294,11 @@ class PlanService:
         if request.context:
             return request.context
         if request.need_profile:
-            return request.need_profile.to_plan_context()
+            return PlanContext.model_validate(request.need_profile.to_plan_context())
         return PlanContext(
             city="hefei",
             date="2026-05-02",
-            time_window={"start": "13:00", "end": "21:00"},
+            time_window=TimeWindow(start="13:00", end="21:00"),
             party="friends",
             budget_per_person=None,
         )
@@ -323,5 +324,5 @@ class PlanService:
             "history_preference": "收藏偏好匹配",
         }
         positive = {key: value for key, value in score.items() if key in labels}
-        key = max(positive, key=positive.get)
+        key = max(positive, key=lambda item: positive[item])
         return f"{labels[key]} {positive[key]:.1f} 分"

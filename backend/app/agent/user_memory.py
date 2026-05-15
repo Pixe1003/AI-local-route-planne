@@ -1,5 +1,6 @@
 from collections import Counter
 from datetime import datetime, timedelta, timezone
+from typing import Any
 
 from app.agent.session_summarizer import summarize_session
 from app.agent.store import _conn, list_sessions
@@ -8,6 +9,14 @@ from app.schemas.user_memory import UserFacts
 
 
 CACHE_TTL = timedelta(minutes=5)
+TIME_WINDOW_MAP = {
+    "weekday_morning": ("08:00", "12:00"),
+    "weekday_afternoon": ("13:00", "17:00"),
+    "weekday_evening": ("18:00", "22:00"),
+    "weekend_morning": ("09:00", "13:00"),
+    "weekend_afternoon": ("13:00", "18:00"),
+    "weekend_evening": ("18:00", "23:00"),
+}
 _CACHE: dict[str, tuple[UserFacts, datetime]] = {}
 
 
@@ -20,7 +29,11 @@ def get_user_facts(user_id: str, *, force_refresh: bool = False) -> UserFacts:
         row = _read_facts_row(user_id)
         if row:
             updated_at = _parse_datetime(row[1])
-            if updated_at and now - updated_at < CACHE_TTL:
+            if (
+                updated_at
+                and now - updated_at < CACHE_TTL
+                and _facts_row_is_fresh(user_id, row, updated_at)
+            ):
                 facts = UserFacts.model_validate_json(row[0])
                 _CACHE[user_id] = (facts, now)
                 return facts
@@ -33,8 +46,10 @@ def get_user_facts(user_id: str, *, force_refresh: bool = False) -> UserFacts:
 
 def invalidate_facts(user_id: str) -> None:
     _CACHE.pop(user_id, None)
-    with _conn() as conn:
-        conn.execute("DELETE FROM user_facts WHERE user_id = ?", (user_id,))
+
+
+def bucket_to_time_window(bucket: str | None) -> tuple[str, str] | None:
+    return TIME_WINDOW_MAP.get(bucket or "")
 
 
 def derive_facts(user_id: str) -> UserFacts:
@@ -75,7 +90,7 @@ def derive_facts(user_id: str) -> UserFacts:
     )
 
 
-def _bucket_time_window(state) -> str | None:
+def _bucket_time_window(state: Any) -> str | None:
     try:
         date_obj = datetime.fromisoformat(state.context.date)
         hour = int(state.context.time_window.start.split(":", 1)[0])
@@ -95,7 +110,7 @@ def _favorite_districts(summaries) -> list[str]:
                 poi = repo.get(poi_id)
             except KeyError:
                 continue
-            district = _district_from_address(poi.address)
+            district = getattr(poi, "district", None)
             if district:
                 districts[district] += 1
     return [district for district, _ in districts.most_common(3)]
@@ -114,21 +129,35 @@ def _infer_avoid_categories(rejected_poi_ids: list[str]) -> list[str]:
     return [category for category, count in categories.items() if count >= 2]
 
 
-def _district_from_address(address: str | None) -> str | None:
-    if not address:
-        return None
-    for token in ("蜀山区", "庐阳区", "包河区", "瑶海区", "肥西县", "合肥市"):
-        if token in address:
-            return token
-    return address.split()[0][:12] if address.strip() else None
-
-
 def _read_facts_row(user_id: str):
     with _conn() as conn:
         return conn.execute(
-            "SELECT facts_json, updated_at FROM user_facts WHERE user_id = ?",
+            "SELECT facts_json, updated_at, session_count FROM user_facts WHERE user_id = ?",
             (user_id,),
         ).fetchone()
+
+
+def _facts_row_is_fresh(user_id: str, row, facts_updated_at: datetime) -> bool:
+    row_session_count = int(row[2] or 0)
+    session_count, latest_session_updated_at = _read_done_session_stats(user_id)
+    if session_count != row_session_count:
+        return False
+    if latest_session_updated_at and latest_session_updated_at > facts_updated_at:
+        return False
+    return True
+
+
+def _read_done_session_stats(user_id: str) -> tuple[int, datetime | None]:
+    with _conn() as conn:
+        row = conn.execute(
+            """
+            SELECT COUNT(*), MAX(updated_at)
+            FROM agent_sessions
+            WHERE user_id = ? AND phase = 'DONE'
+            """,
+            (user_id,),
+        ).fetchone()
+    return int(row[0] or 0), _parse_datetime(row[1]) if row and row[1] else None
 
 
 def _write_facts_row(facts: UserFacts) -> None:
@@ -151,9 +180,9 @@ def _write_facts_row(facts: UserFacts) -> None:
         )
 
 
-def _parse_datetime(raw: str) -> datetime | None:
+def _parse_datetime(raw: str | None) -> datetime | None:
     try:
-        parsed = datetime.fromisoformat(raw)
+        parsed = datetime.fromisoformat(str(raw))
     except (TypeError, ValueError):
         return None
     return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)

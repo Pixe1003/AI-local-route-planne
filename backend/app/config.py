@@ -23,6 +23,12 @@ class Settings(BaseSettings):
     amap_route_timeout_seconds: float = 15.0
     agent_tool_calling_enabled: bool = True
     agent_fast_decision_enabled: bool = True
+    prefer_tool_recall_in_trace: bool = False
+    log_level: str = "INFO"
+    ugc_semantic_search_enabled: bool = True
+    otel_service_name: str = "airoute-agent"
+    otel_exporter_otlp_endpoint: str = ""
+    redis_url: str = ""
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 

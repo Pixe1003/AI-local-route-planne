@@ -10,11 +10,13 @@ from app.agent.conductor import Conductor
 from app.agent.state import AgentGoal, AgentState, Critique, ToolCall
 from app.agent.story_models import StoryPlan
 from app.agent.session_summarizer import summarize_session
-from app.agent.store import list_sessions, load_state, save_state
+from app.agent.store import list_sessions, load_state, save_state, session_cost_summary
 from app.agent.tools import get_tool_registry
 from app.agent.tracing import get_trace_events, subscribe, unsubscribe
 from app.agent.user_memory import get_user_facts
+from app.config import get_settings
 from app.llm.client import LlmClient
+from app.observability.metrics import MEMORY_LAYER_USAGE
 from app.schemas.onboarding import UserNeedProfile
 from app.schemas.plan import PlanContext, ValidationResult
 from app.schemas.pool import PoolResponse, TimeWindow
@@ -30,7 +32,7 @@ class AgentRunRequest(BaseModel):
     user_id: str
     free_text: str
     city: str = "hefei"
-    time_window: TimeWindow
+    time_window: TimeWindow | None = None
     date: str
     budget_per_person: int | None = None
     preference_snapshot: PreferenceSnapshot | None = None
@@ -93,6 +95,14 @@ def list_agent_tools() -> list[dict]:
     return get_tool_registry().schemas_for_llm()
 
 
+@router.get("/cost/{session_id}")
+def get_session_cost(session_id: str) -> dict:
+    summary = session_cost_summary(session_id)
+    if not summary:
+        raise HTTPException(status_code=404, detail="Session not found")
+    return summary
+
+
 @router.get("/user/{user_id}/facts", response_model=UserFacts)
 def get_user_facts_endpoint(user_id: str, force_refresh: bool = False) -> UserFacts:
     return get_user_facts(user_id, force_refresh=force_refresh)
@@ -128,10 +138,11 @@ async def stream_trace(session_id: str) -> StreamingResponse:
 
 def build_initial_state(request: AgentRunRequest) -> AgentState:
     session_id = request.session_id or uuid4().hex
+    time_window = request.time_window or TimeWindow(start="13:00", end="21:00")
     context = PlanContext(
         city=request.city,
         date=request.date,
-        time_window=request.time_window,
+        time_window=time_window,
         party="friends",
         budget_per_person=request.budget_per_person,
     )
@@ -179,17 +190,36 @@ def _enrich_initial_memory(
     session_id: str,
 ) -> None:
     state.memory.episodic_summary = _load_episodic_summaries(request.user_id)
+    if state.memory.episodic_summary:
+        MEMORY_LAYER_USAGE.labels(layer="episodic").inc()
     try:
         facts = get_user_facts(request.user_id)
     except Exception:
         facts = None
     state.memory.user_facts = facts
+    if facts and facts.session_count > 0:
+        MEMORY_LAYER_USAGE.labels(layer="semantic").inc()
     if facts and facts.rejected_poi_ids:
         state.profile.must_avoid = list(
             dict.fromkeys([*state.profile.must_avoid, *facts.rejected_poi_ids])
         )
-    state.memory.similar_sessions = _load_similar_sessions(request, session_id)
-    state.memory.similar_sessions_searched = True
+    if request.time_window is None and facts and facts.typical_time_windows:
+        from app.agent.user_memory import bucket_to_time_window
+
+        inferred = bucket_to_time_window(facts.typical_time_windows[0])
+        if inferred:
+            state.context.time_window = TimeWindow(start=inferred[0], end=inferred[1])
+            state.profile.time.start_time = inferred[0]
+            state.profile.time.end_time = inferred[1]
+    if not get_settings().prefer_tool_recall_in_trace:
+        try:
+            state.memory.similar_sessions = _load_similar_sessions(request, session_id)
+        except Exception:
+            state.memory.similar_sessions = []
+        else:
+            state.memory.similar_sessions_searched = True
+            if state.memory.similar_sessions:
+                MEMORY_LAYER_USAGE.labels(layer="vector").inc()
 
 
 def _load_episodic_summaries(user_id: str) -> list:
@@ -208,17 +238,14 @@ def _load_similar_sessions(
     request: AgentRunRequest,
     session_id: str,
 ) -> list[SimilarSessionHit]:
-    try:
-        from app.repositories.session_vector_repo import get_session_vector_repo
+    from app.repositories.session_vector_repo import get_session_vector_repo
 
-        return get_session_vector_repo().search_similar(
-            request.user_id,
-            request.free_text,
-            top_k=3,
-            exclude_session_id=session_id,
-        )
-    except Exception:
-        return []
+    return get_session_vector_repo().search_similar(
+        request.user_id,
+        request.free_text,
+        top_k=3,
+        exclude_session_id=session_id,
+    )
 
 
 def _response_from_state(state: AgentState) -> AgentRunResponse:

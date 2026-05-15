@@ -3,6 +3,7 @@ from collections.abc import Iterable
 from fastapi import APIRouter, HTTPException
 
 from app.repositories.poi_repo import get_poi_repository
+from app.observability.metrics import AMAP_REQUESTS, CACHE_HIT_RATE
 from app.schemas.route import (
     GeoJSONFeature,
     GeoJSONFeatureCollection,
@@ -13,6 +14,7 @@ from app.schemas.route import (
     RouteSegmentSummary,
     RouteStepFeatureProperties,
 )
+from app.services.amap import cache as amap_cache
 from app.services.amap.client import AmapRouteClient
 from app.services.amap.errors import AmapConfigError, AmapResponseParseError, AmapUpstreamError
 from app.services.amap.schemas import AmapLngLat, AmapRouteResult
@@ -148,14 +150,33 @@ def _get_route_with_retry(
     cache_key = (str(mode), origin.to_amap_param(), destination.to_amap_param())
     cached = _SEGMENT_ROUTE_CACHE.get(cache_key)
     if cached is not None:
+        CACHE_HIT_RATE.labels(cache_name="amap_route_segment", result="hit").inc()
+        AMAP_REQUESTS.labels(mode=str(mode), status="ok", cache="hit").inc()
         return cached
+    persistent_key = amap_cache.cache_key(
+        mode=str(mode),
+        origin_lon=origin.longitude,
+        origin_lat=origin.latitude,
+        dest_lon=destination.longitude,
+        dest_lat=destination.latitude,
+    )
+    cached = amap_cache.get_cached(persistent_key)
+    if cached is not None:
+        _SEGMENT_ROUTE_CACHE[cache_key] = cached
+        CACHE_HIT_RATE.labels(cache_name="amap_route_segment", result="hit").inc()
+        AMAP_REQUESTS.labels(mode=str(mode), status="ok", cache="hit").inc()
+        return cached
+    CACHE_HIT_RATE.labels(cache_name="amap_route_segment", result="miss").inc()
     last_error: AmapUpstreamError | None = None
     for _ in range(SEGMENT_ROUTE_ATTEMPTS):
         try:
             result = client.get_route(mode=mode, origin=origin, destination=destination)
             _SEGMENT_ROUTE_CACHE[cache_key] = result
+            amap_cache.set_cached(persistent_key, result)
+            AMAP_REQUESTS.labels(mode=str(mode), status="ok", cache="miss").inc()
             return result
         except AmapUpstreamError as exc:
+            AMAP_REQUESTS.labels(mode=str(mode), status="error", cache="miss").inc()
             last_error = exc
     if last_error is not None:
         raise last_error

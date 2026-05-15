@@ -5,6 +5,8 @@ from pathlib import Path
 from typing import Any
 
 from app.config import get_settings
+from app.observability.metrics import CACHE_HIT_RATE
+from app.repositories import embedding_cache
 from app.schemas.ugc import UgcReview, UgcSearchHit
 
 
@@ -24,18 +26,19 @@ class UgcVectorRepo:
         embed_path: str | Path | None = None,
         meta_path: str | Path | None = None,
     ) -> None:
+        using_default_data = data_path is None
         self.data_path = _resolve_data_path(data_path)
         self._faiss_index_path = _resolve_optional_path(
             faiss_index_path,
-            PROJECT_ROOT / "data" / "processed" / "ugc_hefei.faiss",
+            PROJECT_ROOT / "data" / "processed" / "ugc_hefei.faiss" if using_default_data else None,
         )
         self._embed_path = _resolve_optional_path(
             embed_path,
-            PROJECT_ROOT / "data" / "processed" / "ugc_hefei_embeddings.npy",
+            PROJECT_ROOT / "data" / "processed" / "ugc_hefei_embeddings.npy" if using_default_data else None,
         )
         self._meta_path = _resolve_optional_path(
             meta_path,
-            PROJECT_ROOT / "data" / "processed" / "ugc_hefei_meta.jsonl",
+            PROJECT_ROOT / "data" / "processed" / "ugc_hefei_meta.jsonl" if using_default_data else None,
         )
         self._reviews: list[UgcReview] | None = None
         self._faiss_index: Any | None = None
@@ -118,9 +121,16 @@ class UgcVectorRepo:
         return self._reviews
 
     def _ensure_faiss_index(self) -> bool:
+        if self._semantic_search_disabled_for_default_data():
+            return False
         if self._faiss_index is not None and self._metas is not None and self._model is not None:
             return True
-        if not (self._faiss_index_path.exists() and self._meta_path.exists()):
+        if not (
+            self._faiss_index_path
+            and self._meta_path
+            and self._faiss_index_path.exists()
+            and self._meta_path.exists()
+        ):
             return False
         try:
             import faiss
@@ -144,9 +154,16 @@ class UgcVectorRepo:
         return True
 
     def _ensure_embeddings(self) -> bool:
+        if self._semantic_search_disabled_for_default_data():
+            return False
         if self._embeddings is not None and self._metas is not None and self._model is not None:
             return True
-        if not (self._embed_path.exists() and self._meta_path.exists()):
+        if not (
+            self._embed_path
+            and self._meta_path
+            and self._embed_path.exists()
+            and self._meta_path.exists()
+        ):
             return False
         try:
             import numpy as np
@@ -181,7 +198,15 @@ class UgcVectorRepo:
             return None
         return model_cls
 
+    def _semantic_search_disabled_for_default_data(self) -> bool:
+        return (
+            not get_settings().ugc_semantic_search_enabled
+            and self.data_path == _resolve_data_path(None)
+        )
+
     def _load_metas(self) -> list[dict[str, Any]]:
+        if self._meta_path is None:
+            return []
         return [
             json.loads(line)
             for line in self._meta_path.read_text(encoding="utf-8").splitlines()
@@ -202,10 +227,7 @@ class UgcVectorRepo:
         assert self._metas is not None
         assert self._model is not None
 
-        q_emb = np.asarray(
-            self._model.encode(query, normalize_embeddings=True),
-            dtype="float32",
-        )
+        q_emb = np.asarray(self._encode_query_cached(query), dtype="float32")
         if q_emb.ndim == 1:
             q_emb = q_emb.reshape(1, -1)
         search_k = top_k
@@ -243,7 +265,7 @@ class UgcVectorRepo:
         assert self._metas is not None
         assert self._model is not None
 
-        q_emb = self._model.encode(query, normalize_embeddings=True).astype("float32")
+        q_emb = np.asarray(self._encode_query_cached(query), dtype="float32")
         scores = self._embeddings @ q_emb
         mask = np.ones(len(scores), dtype=bool)
         if city:
@@ -319,6 +341,18 @@ class UgcVectorRepo:
             tags=review.tags,
         )
 
+    def _encode_query_cached(self, text: str):
+        assert self._model is not None
+        key = embedding_cache.cache_key(MODEL_NAME, text)
+        cached = embedding_cache.get(key)
+        if cached is not None:
+            CACHE_HIT_RATE.labels(cache_name="embedding_query", result="hit").inc()
+            return cached
+        CACHE_HIT_RATE.labels(cache_name="embedding_query", result="miss").inc()
+        embedding = self._model.encode(text, normalize_embeddings=True)
+        embedding_cache.put(key, embedding)
+        return embedding
+
 
 @lru_cache
 def get_ugc_vector_repo() -> UgcVectorRepo:
@@ -330,7 +364,7 @@ def _resolve_data_path(data_path: str | Path | None) -> Path:
     return raw if raw.is_absolute() else PROJECT_ROOT / raw
 
 
-def _resolve_optional_path(path: str | Path | None, default: Path) -> Path:
+def _resolve_optional_path(path: str | Path | None, default: Path | None) -> Path | None:
     if path is None:
         return default
     raw = Path(path)

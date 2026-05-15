@@ -5,7 +5,7 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from app.agent import tool_schemas
-from app.agent.state import AgentState
+from app.agent.state import AgentPhase, AgentState
 from app.agent.specialists.critic import Critic
 from app.agent.specialists.repair_agent import RepairAgent
 from app.agent.specialists.story_agent import StoryAgent
@@ -24,6 +24,7 @@ from app.schemas.plan import (
 )
 from app.schemas.pool import PoolRequest
 from app.schemas.route import RouteChainRequest
+from app.services.amap.schemas import AmapRouteMode
 from app.services.pool_service import PoolService
 from app.services.route_validator import RouteValidator
 from app.solver.distance import haversine_meters
@@ -34,7 +35,8 @@ class ToolResult(BaseModel):
     observation_summary: str
     payload: Any | None = None
     memory_patch: dict[str, Any] = Field(default_factory=dict)
-    next_phase: str | None = None
+    next_phase: AgentPhase | None = None
+    observation_payload_ref: str | None = None
 
 
 @dataclass(frozen=True)
@@ -189,7 +191,8 @@ def _recommend_pool(state: AgentState, args: dict[str, Any]) -> ToolResult:
 
 
 def _compose_story(state: AgentState, args: dict[str, Any]) -> ToolResult:
-    story = StoryAgent().compose(state)
+    agent = StoryAgent()
+    story = agent.compose(state)
     return ToolResult(
         observation_summary=(
             f"Composed story route '{story.theme}' with {len(story.stops)} stops "
@@ -198,6 +201,7 @@ def _compose_story(state: AgentState, args: dict[str, Any]) -> ToolResult:
         payload=story,
         memory_patch={"story_plan": story},
         next_phase="COMPOSING",
+        observation_payload_ref=f"prompt:story@{agent.last_prompt_version}",
     )
 
 
@@ -285,7 +289,7 @@ def _get_amap_chain(state: AgentState, args: dict[str, Any]) -> ToolResult:
     repo = get_poi_repository()
     poi_ids = _compact_route_ids(raw_ids, repo)
     story_patch = _story_with_ids(state, poi_ids) if poi_ids != raw_ids and state.memory.story_plan else None
-    payload = RouteChainRequest(mode=args.get("mode") or "driving", poi_ids=poi_ids)
+    payload = RouteChainRequest(mode=AmapRouteMode(args.get("mode") or "driving"), poi_ids=poi_ids)
     route_pois = routes_route._resolve_route_pois(payload)
     client = routes_route.AmapRouteClient()
     try:
@@ -311,6 +315,8 @@ def _get_amap_chain(state: AgentState, args: dict[str, Any]) -> ToolResult:
 
 
 def _validate_route(state: AgentState, args: dict[str, Any]) -> ToolResult:
+    if state.memory.intent is None:
+        raise ValueError("Cannot validate route before intent is parsed")
     route = _story_route_skeleton(state)
     validation = RouteValidator().validate(
         route,

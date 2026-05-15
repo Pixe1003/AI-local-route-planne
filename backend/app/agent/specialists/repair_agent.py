@@ -2,6 +2,7 @@ import re
 
 from pydantic import BaseModel, Field, ValidationError
 
+from app.agent.prompts import load_prompt
 from app.config import get_settings
 from app.llm.client import LlmClient
 
@@ -27,10 +28,7 @@ class RepairAgent:
             self._build_prompt(message),
             fallback=rule_result.model_dump(),
             agent_name="repair_agent",
-            system_prompt=(
-                "你是路线反馈解析器。返回严格 JSON。"
-                "不要编造未提及的字段，无法确定填 null。"
-            ),
+            system_prompt=load_prompt("repair")[0],
         )
         try:
             merged = {

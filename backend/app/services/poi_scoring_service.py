@@ -136,8 +136,13 @@ class PoiScoringService:
             score += 6.0
         if poi.category in facts.avoid_categories:
             score -= 10.0
-        if facts.favorite_districts and any(district in poi.address for district in facts.favorite_districts):
-            score += 2.0
+        if facts.favorite_districts:
+            poi_district = getattr(poi, "district", None)
+            address = getattr(poi, "address", "") or ""
+            if poi_district and poi_district in facts.favorite_districts:
+                score += 2.0
+            elif any(district in address for district in facts.favorite_districts):
+                score += 2.0
         if facts.typical_budget_range and poi.price_per_person:
             _, high = facts.typical_budget_range
             if poi.price_per_person > high:
@@ -145,12 +150,12 @@ class PoiScoringService:
         return max(-16.0, min(score, 10.0))
 
     def _queue_penalty(self, poi, intent: StructuredIntent | None, text: str) -> float:
-        penalty = -min(poi.queue_estimate["weekend_peak"] / 60 * 12, 12)
+        penalty = -min(float(poi.queue_estimate["weekend_peak"]) / 60 * 12, 12.0)
         if intent and intent.soft_preferences.avoid_queue:
             penalty *= 1.4
         if "少排队" in text or "不排队" in text:
             penalty *= 1.2
-        return penalty
+        return float(penalty)
 
     def _price_penalty(
         self, poi, intent: StructuredIntent | None, profile: UserNeedProfile | None

@@ -1,12 +1,15 @@
 import hashlib
 import json
 import re
+import threading
 from datetime import datetime, timezone
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
 from app.agent.state import AgentState
+from app.observability.metrics import CACHE_HIT_RATE
+from app.repositories import embedding_cache
 from app.schemas.user_memory import SessionSummary, SimilarSessionHit
 
 
@@ -21,6 +24,8 @@ class SessionVectorRepo:
         self._indexes: dict[str, Any] = {}
         self._metas: dict[str, list[dict[str, Any]]] = {}
         self._model: Any | None = None
+        self._locks: dict[str, threading.Lock] = {}
+        self._locks_guard = threading.Lock()
 
     def add_session(self, state: AgentState, summary: SessionSummary) -> None:
         vector = self._encode(self._session_to_text(summary))
@@ -30,21 +35,22 @@ class SessionVectorRepo:
         if vector is None:
             return
 
-        index, metas = self._get_or_create_index(state.goal.user_id, dim=vector.shape[1])
-        if any(meta.get("session_id") == state.goal.session_id for meta in metas):
-            return
-        index.add(vector)
-        metas.append(
-            {
-                "session_id": state.goal.session_id,
-                "user_id": state.goal.user_id,
-                "raw_query": summary.raw_query,
-                "theme": summary.theme,
-                "stop_poi_names": summary.stop_poi_names,
-                "created_at": summary.created_at.isoformat(),
-            }
-        )
-        self._persist(state.goal.user_id, index, metas)
+        with self._user_lock(state.goal.user_id):
+            index, metas = self._get_or_create_index(state.goal.user_id, dim=vector.shape[1])
+            if any(meta.get("session_id") == state.goal.session_id for meta in metas):
+                return
+            index.add(vector)
+            metas.append(
+                {
+                    "session_id": state.goal.session_id,
+                    "user_id": state.goal.user_id,
+                    "raw_query": summary.raw_query,
+                    "theme": summary.theme,
+                    "stop_poi_names": summary.stop_poi_names,
+                    "created_at": summary.created_at.isoformat(),
+                }
+            )
+            self._persist(state.goal.user_id, index, metas)
 
     def search_similar(
         self,
@@ -107,7 +113,19 @@ class SessionVectorRepo:
             if item
         )
 
+    def _user_lock(self, user_id: str) -> threading.Lock:
+        with self._locks_guard:
+            if user_id not in self._locks:
+                self._locks[user_id] = threading.Lock()
+            return self._locks[user_id]
+
     def _encode(self, text: str):
+        key = embedding_cache.cache_key(MODEL_NAME, text)
+        cached = embedding_cache.get(key)
+        if cached is not None:
+            CACHE_HIT_RATE.labels(cache_name="embedding_query", result="hit").inc()
+            return cached
+        CACHE_HIT_RATE.labels(cache_name="embedding_query", result="miss").inc()
         try:
             import numpy as np
             from sentence_transformers import SentenceTransformer
@@ -116,7 +134,9 @@ class SessionVectorRepo:
         try:
             if self._model is None:
                 self._model = SentenceTransformer(MODEL_NAME, local_files_only=True)
-            return np.asarray(self._model.encode(text, normalize_embeddings=True), dtype="float32")
+            embedding = np.asarray(self._model.encode(text, normalize_embeddings=True), dtype="float32")
+            embedding_cache.put(key, embedding)
+            return embedding
         except Exception:
             return None
 

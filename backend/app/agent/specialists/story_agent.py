@@ -1,11 +1,13 @@
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, ClassVar, Literal
 
 from pydantic import ValidationError
 
+from app.agent.prompts import load_prompt
 from app.agent.story_models import DroppedStoryPoi, StoryPlan, StoryStop
 from app.config import get_settings
 from app.llm.client import LlmClient
+from app.observability.metrics import HALLUCINATION_DETECTED
 
 
 @dataclass(frozen=True)
@@ -20,14 +22,18 @@ class CandidateEvidence:
 
 
 class StoryAgent:
-    ROLES = ["opener", "midway", "main", "rest", "closer"]
+    Role = Literal["opener", "midway", "main", "rest", "closer"]
+    ROLES: ClassVar[tuple[Role, ...]] = ("opener", "midway", "main", "rest", "closer")
 
     def __init__(self, llm: LlmClient | None = None) -> None:
         self.llm = llm or LlmClient()
+        self.last_prompt_version = "unversioned"
 
     def compose(self, state: Any) -> StoryPlan:
         candidates = self._candidate_evidence(state)
         fallback = self._fallback_plan(candidates, state)
+        system_prompt, prompt_version = load_prompt("story")
+        self.last_prompt_version = prompt_version
         if not candidates:
             return fallback
         settings = get_settings()
@@ -38,16 +44,16 @@ class StoryAgent:
             self._build_prompt(candidates, state),
             fallback=fallback.model_dump(),
             agent_name="story_planner",
-            system_prompt=(
-                "You are a local route story planner. Return strict JSON only. "
-                "Use only the supplied POI ids and UGC quote refs."
-            ),
+            system_prompt=system_prompt,
         )
         try:
             story = StoryPlan.model_validate(raw)
         except ValidationError:
             return fallback
-        return fallback if self.post_check(story, state) else story
+        issues = self.post_check(story, state)
+        for issue in issues:
+            HALLUCINATION_DETECTED.labels(specialist="story", issue=issue).inc()
+        return fallback if issues else story
 
     def post_check(self, story: StoryPlan, state: Any) -> list[str]:
         candidates = self._candidate_evidence(state)
@@ -215,7 +221,8 @@ class StoryAgent:
                 if poi.id in seen:
                     continue
                 seen.add(poi.id)
-                hit = (ugc_by_poi.get(poi.id) or [None])[0]
+                hits = ugc_by_poi.get(poi.id, [])
+                hit = hits[0] if hits else None
                 if hit:
                     quote_ref = str(hit.get("post_id") or f"ugc:{poi.id}")
                     quote = str(hit.get("snippet") or poi.highlight_quote or poi.name)

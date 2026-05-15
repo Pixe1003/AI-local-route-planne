@@ -104,6 +104,44 @@ def test_build_initial_state_loads_recent_episodic_summaries(tmp_path, monkeypat
     assert all(item.theme for item in state.memory.episodic_summary)
 
 
+def test_build_initial_state_can_defer_similar_session_recall_to_tool(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr("app.agent.store.DB_PATH", tmp_path / "agent_sessions.sqlite", raising=False)
+    monkeypatch.setattr("app.agent.store._persist_session_vector", lambda state: None, raising=False)
+    monkeypatch.setenv("PREFER_TOOL_RECALL_IN_TRACE", "true")
+
+    from app.config import get_settings
+
+    get_settings.cache_clear()
+    save_state(_completed_state(session_id="session_1"))
+
+    def fail_if_preloaded(request, session_id):
+        raise AssertionError("similar sessions should be recalled by the tool")
+
+    monkeypatch.setattr(
+        "app.api.routes_agent._load_similar_sessions",
+        fail_if_preloaded,
+        raising=False,
+    )
+
+    state = build_initial_state(
+        AgentRunRequest(
+            user_id="memory_user",
+            free_text="another local route",
+            city="hefei",
+            date="2026-05-08",
+            time_window=TimeWindow(start="13:00", end="19:00"),
+            budget_per_person=160,
+        )
+    )
+
+    assert state.memory.episodic_summary
+    assert state.memory.similar_sessions == []
+    assert state.memory.similar_sessions_searched is False
+
+
 def test_story_prompt_includes_recent_and_similar_session_memory() -> None:
     from app.agent.session_summarizer import summarize_session
     from app.agent.specialists.story_agent import CandidateEvidence, StoryAgent
