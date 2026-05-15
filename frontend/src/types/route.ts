@@ -72,6 +72,7 @@ export interface AmapRouteRequest {
   source: "ugc_instant_route" | "manual_route"
   pool_id?: string
   session_id?: string
+  route_chain?: RouteChainResponse | null
   story_plan?: StoryPlan | null
   agent_steps?: AgentToolCall[]
   free_text?: string

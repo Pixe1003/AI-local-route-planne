@@ -1,0 +1,167 @@
+# serializer version: 1
+# name: test_agent_run_response_shape
+  dict({
+    'critique': dict({
+      'evidence_strength': 'int',
+      'hint': 'NoneType',
+      'issues': list([
+      ]),
+      'narrative': 'int',
+      'pacing': 'int',
+      'preference_fit': 'int',
+      'should_stop': 'bool',
+      'theme_coherence': 'int',
+    }),
+    'ordered_poi_ids': list([
+      'str',
+    ]),
+    'phase': 'str',
+    'pool': dict({
+      'categories': list([
+        dict({
+          'description': 'str',
+          'name': 'str',
+          'pois': list([
+            dict({
+              'category': 'str',
+              'cover_image': 'NoneType',
+              'distance_meters': 'NoneType',
+              'estimated_queue_min': 'int',
+              'highlight_quote': 'str',
+              'id': 'str',
+              'keywords': list([
+                'str',
+              ]),
+              'name': 'str',
+              'price_per_person': 'NoneType',
+              'rating': 'float',
+              'score_breakdown': dict({
+                'context_fit': 'float',
+                'distance_penalty': 'float',
+                'fact_alignment': 'float',
+                'history_preference': 'float',
+                'poi_quality': 'float',
+                'price_penalty': 'float',
+                'queue_penalty': 'float',
+                'risk_penalty': 'float',
+                'service_closure': 'float',
+                'total': 'float',
+                'ugc_match': 'float',
+                'user_interest': 'float',
+              }),
+              'suitable_score': 'float',
+              'why_recommend': 'str',
+            }),
+          ]),
+        }),
+      ]),
+      'default_selected_ids': list([
+        'str',
+      ]),
+      'meta': dict({
+        'generated_at': 'str',
+        'total_count': 'int',
+        'user_persona_summary': 'str',
+      }),
+      'pool_id': 'str',
+    }),
+    'route_chain': dict({
+      'geojson': dict({
+        'features': list([
+          dict({
+            'geometry': dict({
+              'coordinates': list([
+                list([
+                  'float',
+                ]),
+              ]),
+              'type': 'str',
+            }),
+            'properties': dict({
+              'distance_m': 'float',
+              'duration_s': 'float',
+              'from_poi_id': 'str',
+              'from_poi_name': 'str',
+              'instruction': 'str',
+              'road_name': 'str',
+              'segment_index': 'int',
+              'step_index': 'int',
+              'to_poi_id': 'str',
+              'to_poi_name': 'str',
+            }),
+            'type': 'str',
+          }),
+        ]),
+        'type': 'str',
+      }),
+      'mode': 'str',
+      'ordered_pois': list([
+        dict({
+          'category': 'str',
+          'cover_image': 'NoneType',
+          'id': 'str',
+          'latitude': 'float',
+          'longitude': 'float',
+          'name': 'str',
+        }),
+      ]),
+      'segments': list([
+        dict({
+          'distance_m': 'float',
+          'duration_s': 'float',
+          'from_poi_id': 'str',
+          'from_poi_name': 'str',
+          'segment_index': 'int',
+          'to_poi_id': 'str',
+          'to_poi_name': 'str',
+        }),
+      ]),
+      'total_distance_m': 'float',
+      'total_duration_s': 'float',
+    }),
+    'session_id': 'str',
+    'steps': list([
+      dict({
+        'args': dict({
+          'free_text': 'str',
+        }),
+        'ended_at': 'str',
+        'error': 'NoneType',
+        'latency_ms': 'int',
+        'observation_payload_ref': 'NoneType',
+        'observation_summary': 'str',
+        'started_at': 'str',
+        'tokens_used': 'int',
+        'tool_name': 'str',
+      }),
+    ]),
+    'story_plan': dict({
+      'dropped': list([
+        dict({
+          'poi_id': 'str',
+          'reason': 'str',
+        }),
+      ]),
+      'fallback_used': 'bool',
+      'narrative': 'str',
+      'stops': list([
+        dict({
+          'poi_id': 'str',
+          'role': 'str',
+          'suggested_dwell_min': 'int',
+          'ugc_quote': 'str',
+          'ugc_quote_ref': 'str',
+          'why': 'str',
+        }),
+      ]),
+      'theme': 'str',
+    }),
+    'trace_id': 'str',
+    'validation': dict({
+      'is_valid': 'bool',
+      'issues': list([
+      ]),
+      'repaired_count': 'int',
+    }),
+  })
+# ---

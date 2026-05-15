@@ -10,6 +10,7 @@ from app.schemas.plan import PlanContext, StructuredIntent
 from app.schemas.pool import PoolResponse
 from app.schemas.preferences import PreferenceSnapshot
 from app.schemas.route import RouteChainResponse
+from app.schemas.user_memory import SessionSummary, SimilarSessionHit, UserFacts
 
 
 class AgentGoal(BaseModel):
@@ -55,6 +56,21 @@ class AgentMemory(BaseModel):
     story_retry_count: int = 0
     feedback_intent: dict[str, Any] | None = None
     feedback_applied: bool = False
+    episodic_summary: list[SessionSummary] = Field(default_factory=list)
+    user_facts: UserFacts | None = None
+    similar_sessions: list[SimilarSessionHit] = Field(default_factory=list)
+    similar_sessions_searched: bool = False
+
+
+AgentPhase = Literal[
+    "UNDERSTANDING",
+    "RETRIEVING",
+    "COMPOSING",
+    "CHECKING",
+    "PRESENTING",
+    "DONE",
+    "FAILED",
+]
 
 
 class AgentState(BaseModel):
@@ -64,14 +80,6 @@ class AgentState(BaseModel):
     context: PlanContext
     steps: list[ToolCall] = Field(default_factory=list)
     memory: AgentMemory = Field(default_factory=AgentMemory)
-    phase: Literal[
-        "UNDERSTANDING",
-        "RETRIEVING",
-        "COMPOSING",
-        "CHECKING",
-        "PRESENTING",
-        "DONE",
-        "FAILED",
-    ] = "UNDERSTANDING"
+    phase: AgentPhase = "UNDERSTANDING"
     version: int = 1
     trace_id: str = Field(default_factory=lambda: uuid4().hex)

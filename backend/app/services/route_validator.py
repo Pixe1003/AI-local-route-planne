@@ -36,7 +36,7 @@ class RouteValidator:
             issues.append(ValidationIssue(code="too_few_pois", message="路线至少需要串联 3 个 POI。"))
         if "restaurant" not in route_categories:
             issues.append(ValidationIssue(code="meal_missing", message="路线需要包含至少 1 个餐饮点。"))
-        if not route_categories & self.EXPERIENCE_CATEGORIES:
+        if self._has_experience_options(context) and not route_categories & self.EXPERIENCE_CATEGORIES:
             issues.append(
                 ValidationIssue(
                     code="experience_missing",
@@ -120,3 +120,11 @@ class RouteValidator:
             weekday = "saturday"
         windows = poi.open_hours.get(weekday, []) if poi.open_hours else []
         return any(window["open"] <= arrival_time <= window["close"] for window in windows)
+
+    def _has_experience_options(self, context: PlanContext | None) -> bool:
+        if context is None:
+            return True
+        return any(
+            poi.category in self.EXPERIENCE_CATEGORIES
+            for poi in self.repo.list_by_city(context.city)
+        )

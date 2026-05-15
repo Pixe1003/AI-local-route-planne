@@ -1,6 +1,10 @@
 import re
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
+
+from app.agent.prompts import load_prompt
+from app.config import get_settings
+from app.llm.client import LlmClient
 
 
 class FeedbackIntent(BaseModel):
@@ -15,6 +19,27 @@ class FeedbackIntent(BaseModel):
 
 class RepairAgent:
     def parse(self, message: str) -> FeedbackIntent:
+        rule_result = self._rule_parse(message)
+        settings = get_settings()
+        if not settings.llm_api_key or not settings.agent_tool_calling_enabled:
+            return rule_result
+
+        llm_data = LlmClient().complete_json(
+            self._build_prompt(message),
+            fallback=rule_result.model_dump(),
+            agent_name="repair_agent",
+            system_prompt=load_prompt("repair")[0],
+        )
+        try:
+            merged = {
+                **rule_result.model_dump(),
+                **{key: value for key, value in llm_data.items() if value is not None},
+            }
+            return FeedbackIntent.model_validate(merged)
+        except ValidationError:
+            return rule_result
+
+    def _rule_parse(self, message: str) -> FeedbackIntent:
         deltas: dict[str, object] = {}
         target_stop_index = self._target_stop_index(message)
         if target_stop_index is not None:
@@ -81,3 +106,22 @@ class RepairAgent:
         if match:
             return int(match.group(1))
         return None
+
+    def _build_prompt(self, message: str) -> str:
+        return f"""把用户的中文反馈拆成结构化 delta。
+
+输出字段：
+- event_type: REPLACE_POI | BUDGET_EXCEEDED | WEATHER_CHANGED | TIME_DELAYED | USER_REJECT_POI | USER_MODIFY_CONSTRAINT
+- target_stop_index: 用户指明的站点序号（0-based），无法确定为 null
+- category_hint: restaurant | cafe | nightlife | culture | scenic 或 null
+- budget_per_person: 用户指明的新预算（人均），无法确定为 null
+- deltas: 其他增量约束，无则空对象
+
+规则：
+- 复合反馈必须输出多个 delta（不要只挑一个）
+- 模糊词归一化：午餐站 -> target_stop_index 看上下文，无信息为 null
+- "更便宜" -> 不写 budget_per_person，写 deltas.budget_direction = "lower"
+- 输出严格 JSON，不要 Markdown
+
+反馈：{message}
+"""

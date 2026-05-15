@@ -18,7 +18,7 @@ export interface AgentRunRequest {
   user_id: string
   free_text: string
   city: string
-  time_window: TimeWindow
+  time_window?: TimeWindow | null
   date: string
   budget_per_person?: number
   preference_snapshot?: PreferenceSnapshot

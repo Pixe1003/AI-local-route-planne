@@ -1,10 +1,11 @@
 from datetime import datetime
-from typing import Optional
+from typing import Any, Optional
 
 from pydantic import BaseModel, Field, field_validator
 
 from app.schemas.onboarding import UserNeedProfile
 from app.schemas.preferences import PreferenceSnapshot
+from app.schemas.user_memory import UserFacts
 
 
 class TimeWindow(BaseModel):
@@ -35,6 +36,8 @@ class PoolRequest(BaseModel):
     free_text: Optional[str] = None
     need_profile: Optional[UserNeedProfile] = None
     preference_snapshot: Optional[PreferenceSnapshot] = None
+    user_facts: Optional[UserFacts] = None
+    ugc_hits: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class PoiInPool(BaseModel):

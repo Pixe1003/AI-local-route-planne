@@ -225,7 +225,7 @@ class SolverService:
             score += 0.8 if poi.category == "cafe" else 0
         if intent.soft_preferences.photography_priority and "photogenic" in poi.atmosphere:
             score += 0.5
-        return score
+        return float(score)
 
     def _reasonable_main_candidate(self, poi, intent: StructuredIntent) -> bool:
         budget = intent.hard_constraints.budget_total

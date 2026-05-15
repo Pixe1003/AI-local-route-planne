@@ -59,6 +59,7 @@ class PoiRepository:
             city=row["city"],
             category=row["category"],
             sub_category=sub_category,
+            district=district,
             address=row["address"] or f"合肥市{district}",
             latitude=float(row["latitude"]),
             longitude=float(row["longitude"]),

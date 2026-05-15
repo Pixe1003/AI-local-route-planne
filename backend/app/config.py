@@ -28,6 +28,13 @@ class Settings(BaseSettings):
     amap_route_base_url: str = "https://restapi.amap.com"
     amap_route_timeout_seconds: float = 15.0
     agent_tool_calling_enabled: bool = True
+    agent_fast_decision_enabled: bool = True
+    prefer_tool_recall_in_trace: bool = False
+    log_level: str = "INFO"
+    ugc_semantic_search_enabled: bool = True
+    otel_service_name: str = "airoute-agent"
+    otel_exporter_otlp_endpoint: str = ""
+    redis_url: str = ""
 
     model_config = SettingsConfigDict(
         env_file=(PROJECT_ROOT / ".env", BACKEND_ROOT / ".env"),
@@ -39,5 +46,5 @@ class Settings(BaseSettings):
 @lru_cache
 def get_settings() -> Settings:
     if os.getenv("LOCAL_ROUTE_DISABLE_ENV_FILE") == "1":
-        return Settings(_env_file=None)
+        return Settings(_env_file=None)  # type: ignore[call-arg]
     return Settings()

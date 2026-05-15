@@ -17,6 +17,7 @@ class PoiDetail(BaseModel):
     city: str
     category: str
     sub_category: Optional[str] = None
+    district: Optional[str] = None
     address: str
     latitude: float
     longitude: float

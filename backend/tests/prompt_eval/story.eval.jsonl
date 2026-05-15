@@ -1,0 +1,12 @@
+{"id":"case_local_food","input":{"query":"local Hefei food with less queue","city":"hefei","budget_per_person":180},"expected":{"min_stops":3,"max_stops":5,"must_include_categories":["restaurant"],"theme_must_contain_any":["Route","Taste","Local"]}}
+{"id":"case_rainy_indoor","input":{"query":"rainy day indoor food route","city":"hefei","budget_per_person":180},"expected":{"min_stops":3,"max_stops":5,"forbidden_categories":["outdoor"]}}
+{"id":"case_friends_evening","input":{"query":"evening hangout with friends budget 150","city":"hefei","budget_per_person":150},"expected":{"min_stops":3,"max_stops":5,"max_budget_violation_ratio":0.2}}
+{"id":"case_photo_food","input":{"query":"food and photo spots this afternoon","city":"hefei","budget_per_person":200},"expected":{"min_stops":3,"max_stops":5,"must_include_categories":["restaurant"]}}
+{"id":"case_cafe_chat","input":{"query":"quiet cafe then dinner","city":"hefei","budget_per_person":180},"expected":{"min_stops":3,"max_stops":5,"must_include_categories":["restaurant"]}}
+{"id":"case_hotpot_budget","input":{"query":"hotpot under 180 and avoid queues","city":"hefei","budget_per_person":180},"expected":{"min_stops":3,"max_stops":5,"must_include_categories":["restaurant"]}}
+{"id":"case_culture_food","input":{"query":"local meal plus museum or culture stop","city":"hefei","budget_per_person":220},"expected":{"min_stops":3,"max_stops":5,"must_include_categories":["restaurant","culture"]}}
+{"id":"case_relaxed_walk","input":{"query":"relaxed afternoon walk and light meal","city":"hefei","budget_per_person":160},"expected":{"min_stops":3,"max_stops":5,"must_include_categories":["restaurant"]}}
+{"id":"case_family_easy","input":{"query":"easy route for family, not too expensive","city":"hefei","budget_per_person":180},"expected":{"min_stops":3,"max_stops":5,"must_include_categories":["restaurant"]}}
+{"id":"case_night_food","input":{"query":"night food route with friends","city":"hefei","budget_per_person":200},"expected":{"min_stops":3,"max_stops":5,"must_include_categories":["restaurant"]}}
+{"id":"case_local_specials","input":{"query":"Hefei local specialties and short transfers","city":"hefei","budget_per_person":200},"expected":{"min_stops":3,"max_stops":5,"must_include_categories":["restaurant"]}}
+{"id":"case_shopping_food","input":{"query":"shopping break and dinner nearby","city":"hefei","budget_per_person":220},"expected":{"min_stops":3,"max_stops":5,"must_include_categories":["restaurant"]}}

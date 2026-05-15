@@ -5,7 +5,7 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from app.agent import tool_schemas
-from app.agent.state import AgentState
+from app.agent.state import AgentPhase, AgentState
 from app.agent.specialists.critic import Critic
 from app.agent.specialists.repair_agent import RepairAgent
 from app.agent.specialists.story_agent import StoryAgent
@@ -24,8 +24,10 @@ from app.schemas.plan import (
 )
 from app.schemas.pool import PoolRequest
 from app.schemas.route import RouteChainRequest
+from app.services.amap.schemas import AmapRouteMode
 from app.services.pool_service import PoolService
 from app.services.route_validator import RouteValidator
+from app.solver.distance import haversine_meters
 from app.utils.time_utils import add_minutes, minutes_between
 
 
@@ -33,7 +35,8 @@ class ToolResult(BaseModel):
     observation_summary: str
     payload: Any | None = None
     memory_patch: dict[str, Any] = Field(default_factory=dict)
-    next_phase: str | None = None
+    next_phase: AgentPhase | None = None
+    observation_payload_ref: str | None = None
 
 
 @dataclass(frozen=True)
@@ -61,6 +64,7 @@ def get_tool_registry() -> ToolRegistry:
         [
             Tool("parse_intent", tool_schemas.PARSE_INTENT, _parse_intent),
             Tool("search_ugc_evidence", tool_schemas.SEARCH_UGC_EVIDENCE, _search_ugc_evidence),
+            Tool("recall_similar_sessions", tool_schemas.RECALL_SIMILAR_SESSIONS, _recall_similar_sessions),
             Tool("recommend_pool", tool_schemas.RECOMMEND_POOL, _recommend_pool),
             Tool("compose_story", tool_schemas.COMPOSE_STORY, _compose_story),
             Tool("get_amap_chain", tool_schemas.GET_AMAP_CHAIN, _get_amap_chain),
@@ -90,6 +94,8 @@ def _rule_parse_intent(
     selected_poi_ids: list[str],
 ) -> StructuredIntent:
     budget_total = state.context.budget_per_person
+    if budget_total is None and state.memory.user_facts and state.memory.user_facts.typical_budget_range:
+        _, budget_total = state.memory.user_facts.typical_budget_range
     if budget_total is not None and state.context.party == "couple":
         budget_total *= 2
     avoid_queue = any(keyword in free_text for keyword in ["少排队", "不排队", "排队少", "别排队"])
@@ -98,6 +104,10 @@ def _rule_parse_intent(
     pace = "efficient" if any(keyword in free_text for keyword in ["高效", "多逛", "多走"]) else "balanced"
     if any(keyword in free_text for keyword in ["轻松", "慢", "松弛"]):
         pace = "relaxed"
+    avoid_pois = []
+    if state.memory.user_facts:
+        avoid_pois.extend(state.memory.user_facts.rejected_poi_ids)
+    avoid_pois.extend(state.profile.must_avoid)
     return StructuredIntent(
         hard_constraints=HardConstraints(
             start_time=state.context.time_window.start,
@@ -115,7 +125,7 @@ def _rule_parse_intent(
             custom_notes=[free_text] if free_text else [],
         ),
         must_visit_pois=selected_poi_ids,
-        avoid_pois=[],
+        avoid_pois=list(dict.fromkeys(avoid_pois)),
     )
 
 
@@ -133,6 +143,25 @@ def _search_ugc_evidence(state: AgentState, args: dict[str, Any]) -> ToolResult:
     )
 
 
+def _recall_similar_sessions(state: AgentState, args: dict[str, Any]) -> ToolResult:
+    from app.repositories.session_vector_repo import get_session_vector_repo
+
+    query = str(args.get("query") or state.goal.raw_query)
+    top_k = int(args.get("top_k") or 3)
+    hits = get_session_vector_repo().search_similar(
+        state.goal.user_id,
+        query,
+        top_k=top_k,
+        exclude_session_id=state.goal.session_id,
+    )
+    return ToolResult(
+        observation_summary=f"Recalled {len(hits)} similar past sessions.",
+        payload=[hit.model_dump() for hit in hits],
+        memory_patch={"similar_sessions": hits, "similar_sessions_searched": True},
+        next_phase=state.phase,
+    )
+
+
 def _recommend_pool(state: AgentState, args: dict[str, Any]) -> ToolResult:
     free_text = str(args.get("free_text") or state.goal.raw_query)
     city = str(args.get("city") or state.context.city)
@@ -146,6 +175,8 @@ def _recommend_pool(state: AgentState, args: dict[str, Any]) -> ToolResult:
         free_text=free_text,
         need_profile=state.profile,
         preference_snapshot=state.preference,
+        user_facts=state.memory.user_facts,
+        ugc_hits=state.memory.ugc_hits,
     )
     service = PoolService()
     pool = service.generate_pool(request)
@@ -165,7 +196,8 @@ def _recommend_pool(state: AgentState, args: dict[str, Any]) -> ToolResult:
 
 
 def _compose_story(state: AgentState, args: dict[str, Any]) -> ToolResult:
-    story = StoryAgent().compose(state)
+    agent = StoryAgent()
+    story = agent.compose(state)
     return ToolResult(
         observation_summary=(
             f"Composed story route '{story.theme}' with {len(story.stops)} stops "
@@ -174,6 +206,7 @@ def _compose_story(state: AgentState, args: dict[str, Any]) -> ToolResult:
         payload=story,
         memory_patch={"story_plan": story},
         next_phase="COMPOSING",
+        observation_payload_ref=f"prompt:story@{agent.last_prompt_version}",
     )
 
 
@@ -222,6 +255,8 @@ def _replan_by_event(state: AgentState, args: dict[str, Any]) -> ToolResult:
         budget=replacement_budget,
     )
     if replacement is not None and updated.stops:
+        feedback["_original_poi_at_target"] = updated.stops[target_index].poi_id
+        state.memory.feedback_intent = feedback
         updated.stops[target_index] = StoryStop(
             poi_id=replacement.id,
             role=updated.stops[target_index].role,
@@ -245,6 +280,7 @@ def _replan_by_event(state: AgentState, args: dict[str, Any]) -> ToolResult:
             "route_chain": None,
             "validation": None,
             "critique": None,
+            "feedback_intent": feedback,
             "feedback_applied": True,
         },
         next_phase="COMPOSING",
@@ -254,8 +290,11 @@ def _replan_by_event(state: AgentState, args: dict[str, Any]) -> ToolResult:
 def _get_amap_chain(state: AgentState, args: dict[str, Any]) -> ToolResult:
     story_ids = [stop.poi_id for stop in state.memory.story_plan.stops] if state.memory.story_plan else []
     pool_ids = state.memory.pool.default_selected_ids if state.memory.pool else []
-    poi_ids = list(args.get("poi_ids") or story_ids or pool_ids)[:5]
-    payload = RouteChainRequest(mode=args.get("mode") or "driving", poi_ids=poi_ids)
+    raw_ids = list(args.get("poi_ids") or story_ids or pool_ids)
+    repo = get_poi_repository()
+    poi_ids = _compact_route_ids(raw_ids, repo)
+    story_patch = _story_with_ids(state, poi_ids) if poi_ids != raw_ids and state.memory.story_plan else None
+    payload = RouteChainRequest(mode=AmapRouteMode(args.get("mode") or "driving"), poi_ids=poi_ids)
     route_pois = routes_route._resolve_route_pois(payload)
     client = routes_route.AmapRouteClient()
     try:
@@ -272,12 +311,17 @@ def _get_amap_chain(state: AgentState, args: dict[str, Any]) -> ToolResult:
             f"{round(route_chain.total_distance_m)} meters."
         ),
         payload=route_chain,
-        memory_patch={"route_chain": route_chain},
+        memory_patch={
+            "route_chain": route_chain,
+            **({"story_plan": story_patch} if story_patch is not None else {}),
+        },
         next_phase="PRESENTING",
     )
 
 
 def _validate_route(state: AgentState, args: dict[str, Any]) -> ToolResult:
+    if state.memory.intent is None:
+        raise ValueError("Cannot validate route before intent is parsed")
     route = _story_route_skeleton(state)
     validation = RouteValidator().validate(
         route,
@@ -299,7 +343,34 @@ def _validate_route(state: AgentState, args: dict[str, Any]) -> ToolResult:
 
 def _critique(state: AgentState, args: dict[str, Any]) -> ToolResult:
     critique = Critic().review(state)
+    if (
+        not critique.should_stop
+        and state.goal.kind == "plan_route"
+        and state.memory.story_plan is not None
+        and state.memory.story_retry_count < 1
+        and "time_budget_exceeded" in critique.issues
+    ):
+        compacted = _compact_story_for_time_budget(state)
+        return ToolResult(
+            observation_summary="Critic compacted route after time budget was exceeded.",
+            payload=critique,
+            memory_patch={
+                "story_plan": compacted,
+                "route_chain": None,
+                "validation": None,
+                "critique": None,
+                "story_retry_count": state.memory.story_retry_count + 1,
+            },
+            next_phase="COMPOSING",
+        )
     if not critique.should_stop and state.goal.kind == "plan_route" and state.memory.story_retry_count < 1:
+        if not _should_retry_story(critique.issues):
+            return ToolResult(
+                observation_summary=f"Critic requested revision: {', '.join(critique.issues)}",
+                payload=critique,
+                memory_patch={"critique": critique},
+                next_phase="PRESENTING",
+            )
         return ToolResult(
             observation_summary=f"Critic requested one story retry: {', '.join(critique.issues)}",
             payload=critique,
@@ -395,6 +466,99 @@ def _story_dwell_minutes(state: AgentState, poi_id: str, poi: Any | None) -> int
     if poi and poi.category == "restaurant":
         return 55
     return 40
+
+
+def _should_retry_story(issues: list[str]) -> bool:
+    story_issue_codes = {
+        "story_missing",
+        "theme_missing",
+        "narrative_missing",
+        "invalid_stop_count",
+        "weak_evidence",
+        "hallucinated_poi",
+        "hallucinated_ugc",
+    }
+    return any(issue in story_issue_codes for issue in issues)
+
+
+def _compact_story_for_time_budget(state: AgentState):
+    if state.memory.story_plan is None:
+        return None
+    story = state.memory.story_plan.model_copy(deep=True)
+    if len(story.stops) <= 3:
+        return story
+    kept = story.stops[:3]
+    dropped_ids = {stop.poi_id for stop in story.stops[3:]}
+    story.stops = kept
+    existing_dropped = {item.poi_id for item in story.dropped}
+    for poi_id in dropped_ids - existing_dropped:
+        story.dropped.append(type(story.dropped[0])(poi_id=poi_id, reason="time_budget_compaction") if story.dropped else _dropped_story_poi(poi_id))
+    return story
+
+
+def _dropped_story_poi(poi_id: str):
+    from app.agent.story_models import DroppedStoryPoi
+
+    return DroppedStoryPoi(poi_id=poi_id, reason="time_budget_compaction")
+
+
+def _story_with_ids(state: AgentState, poi_ids: list[str]):
+    if state.memory.story_plan is None:
+        return None
+    allowed = set(poi_ids)
+    story = state.memory.story_plan.model_copy(deep=True)
+    original = list(story.stops)
+    story.stops = [stop for stop in original if stop.poi_id in allowed]
+    dropped_ids = {stop.poi_id for stop in original if stop.poi_id not in allowed}
+    existing_dropped = {item.poi_id for item in story.dropped}
+    for poi_id in dropped_ids - existing_dropped:
+        story.dropped.append(_dropped_story_poi(poi_id))
+    return story
+
+
+def _compact_route_ids(
+    poi_ids: list[str],
+    repo,
+    *,
+    max_stops: int = 4,
+    max_segment_m: int = 8_000,
+    max_total_m: int = 15_000,
+) -> list[str]:
+    ids = list(dict.fromkeys(poi_ids))
+    if len(ids) <= 1:
+        return ids
+    poi_by_id = {poi.id: poi for poi in repo.get_many(ids)}
+    if not poi_by_id:
+        return ids[:max_stops]
+    selected = [ids[0]]
+    remaining = [poi_id for poi_id in ids[1:] if poi_id in poi_by_id]
+    total_m = 0.0
+    while remaining and len(selected) < max_stops:
+        current = poi_by_id.get(selected[-1])
+        if current is None:
+            break
+        options = [
+            (haversine_meters(current, poi_by_id[poi_id]), poi_id)
+            for poi_id in remaining
+        ]
+        options.sort(key=lambda item: item[0])
+        next_item = next(
+            (
+                item
+                for item in options
+                if item[0] <= max_segment_m and total_m + item[0] <= max_total_m
+            ),
+            None,
+        )
+        if next_item is None:
+            break
+        distance_m, next_id = next_item
+        selected.append(next_id)
+        remaining.remove(next_id)
+        total_m += distance_m
+    if len(selected) >= 3:
+        return selected
+    return ids[: min(max_stops, len(ids))]
 
 
 def _select_feedback_replacement(

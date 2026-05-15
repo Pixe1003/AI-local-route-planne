@@ -122,6 +122,28 @@ describe("AmapRoutePage", () => {
     vi.unstubAllEnvs()
   })
 
+  it("renders a stored agent route chain without refetching the same route", async () => {
+    createRouteChain.mockRejectedValue(new Error("Network Error"))
+    useAmapRouteStore.getState().setRouteRequest({
+      mode: "driving",
+      poi_ids: ["sh_poi_001", "sh_poi_002"],
+      source: "ugc_instant_route",
+      free_text: "quiet route",
+      route_chain: routeResult
+    })
+
+    render(
+      <MemoryRouter>
+        <AmapRoutePage />
+      </MemoryRouter>
+    )
+
+    expect(await screen.findByText("1.5 km")).toBeInTheDocument()
+    expect(screen.getAllByText("10 分钟").length).toBeGreaterThanOrEqual(1)
+    expect(screen.queryByText("Network Error")).not.toBeInTheDocument()
+    expect(createRouteChain).not.toHaveBeenCalled()
+  })
+
   it("calls route-chain with stored UGC POI ids and renders Amap route results", async () => {
     useAmapRouteStore.getState().setRouteRequest({
       mode: "driving",
