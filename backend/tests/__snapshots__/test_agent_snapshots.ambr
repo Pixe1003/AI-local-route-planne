@@ -27,6 +27,8 @@
               'cover_image': 'NoneType',
               'distance_meters': 'NoneType',
               'estimated_queue_min': 'int',
+              'evidence_snippets': list([
+              ]),
               'highlight_quote': 'str',
               'id': 'str',
               'keywords': list([
@@ -35,6 +37,9 @@
               'name': 'str',
               'price_per_person': 'NoneType',
               'rating': 'float',
+              'retrieval_provenance': list([
+              ]),
+              'retrieval_score': 'NoneType',
               'score_breakdown': dict({
                 'context_fit': 'float',
                 'distance_penalty': 'float',
@@ -59,6 +64,7 @@
         'str',
       ]),
       'meta': dict({
+        'data_warning': 'NoneType',
         'generated_at': 'str',
         'total_count': 'int',
         'user_persona_summary': 'str',

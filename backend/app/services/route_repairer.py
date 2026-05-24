@@ -1,4 +1,5 @@
 from app.repositories.poi_repo import get_poi_repository
+from app.repositories.poi_repo import PoiRepository
 from app.schemas.onboarding import UserNeedProfile
 from app.schemas.plan import RouteMetrics, RouteSkeleton, RouteStop, StructuredIntent
 from app.schemas.preferences import PreferenceSnapshot
@@ -8,9 +9,9 @@ from app.utils.time_utils import add_minutes, minutes_between
 
 
 class RouteRepairer:
-    def __init__(self) -> None:
-        self.repo = get_poi_repository()
-        self.validator = RouteValidator()
+    def __init__(self, repo: PoiRepository | None = None) -> None:
+        self.repo = repo or get_poi_repository()
+        self.validator = RouteValidator(repo=self.repo)
 
     def repair(
         self,

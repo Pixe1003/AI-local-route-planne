@@ -13,6 +13,9 @@ class PlanContext(BaseModel):
     time_window: TimeWindow
     party: Optional[str] = None
     budget_per_person: Optional[int] = None
+    origin_latitude: Optional[float] = None
+    origin_longitude: Optional[float] = None
+    radius_meters: Optional[int] = None
 
 
 class HardConstraints(BaseModel):
@@ -21,6 +24,7 @@ class HardConstraints(BaseModel):
     budget_total: Optional[int] = None
     transport_mode: str = "mixed"
     must_include_meal: bool = False
+    must_include_experience: bool = True
 
 
 class SoftPreferences(BaseModel):

@@ -18,6 +18,16 @@ export interface PoolRequest {
   free_text?: string
   need_profile?: UserNeedProfile
   preference_snapshot?: PreferenceSnapshot
+  origin_latitude?: number
+  origin_longitude?: number
+  radius_meters?: number
+}
+
+export interface EvidenceSnippet {
+  doc_id: string
+  source_type: "poi_profile" | "ugc_review" | "fts" | "feature_bucket" | string
+  text: string
+  score: number
 }
 
 export interface PoiInPool {
@@ -34,6 +44,9 @@ export interface PoiInPool {
   estimated_queue_min?: number | null
   suitable_score: number
   score_breakdown: Record<string, number>
+  retrieval_score?: number | null
+  retrieval_provenance: string[]
+  evidence_snippets: EvidenceSnippet[]
 }
 
 export interface PoolCategory {
@@ -46,6 +59,7 @@ export interface PoolMeta {
   total_count: number
   generated_at: string
   user_persona_summary: string
+  data_warning?: string | null
 }
 
 export interface PoolResponse {
