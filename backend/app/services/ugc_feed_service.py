@@ -1,5 +1,6 @@
 from app.repositories.poi_repo import get_poi_repository
 from app.schemas.ugc import UgcFeedItem
+from app.config import get_settings
 
 
 class UgcFeedService:
@@ -19,10 +20,9 @@ class UgcFeedService:
     def __init__(self) -> None:
         self.repo = get_poi_repository()
 
-    def list_feed(self, city: str = "shanghai", limit: int = 24) -> list[UgcFeedItem]:
-        pois = self.repo.list_by_city(city)
-        if not pois and city != "shanghai":
-            pois = self.repo.list_by_city("shanghai")
+    def list_feed(self, city: str | None = None, limit: int = 24) -> list[UgcFeedItem]:
+        city = city or get_settings().default_city
+        pois = self.repo.list_by_city(city, limit=limit)
         cards: list[UgcFeedItem] = []
         for index, poi in enumerate(pois[:limit]):
             quote = poi.highlight_quotes[0].quote if poi.highlight_quotes else f"{poi.name}体验稳定。"

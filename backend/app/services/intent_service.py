@@ -19,7 +19,25 @@ class IntentService:
         text = free_text or ""
         avoid_queue = any(word in text for word in ["不排队", "少排队", "排队太久"])
         photography = any(word in text for word in ["拍照", "打卡", "情侣", "顺路拍照"])
-        food = any(word in text for word in ["吃", "饭", "晚餐", "美食", "探店", "本地菜"])
+        no_meal = any(word in text for word in ["不吃", "不吃饭", "不用吃", "不安排吃", "只逛不吃"])
+        food = any(word in text for word in ["吃", "饭", "晚餐", "美食", "探店", "本地菜"]) and not no_meal
+        experience = any(
+            word in text
+            for word in [
+                "逛",
+                "散步",
+                "公园",
+                "景点",
+                "展",
+                "拍照",
+                "打卡",
+                "购物",
+                "商场",
+                "娱乐",
+                "夜景",
+            ]
+        )
+        pure_food = food and not experience
         pace = "relaxed" if any(word in text for word in ["松弛", "轻松", "不赶"]) else "balanced"
         if any(word in text for word in ["多逛", "高效", "打卡"]):
             pace = "efficient"
@@ -33,6 +51,7 @@ class IntentService:
                 budget_total=budget_total,
                 transport_mode="mixed",
                 must_include_meal=food,
+                must_include_experience=not pure_food,
             ),
             soft_preferences=SoftPreferences(
                 pace=pace,
@@ -58,6 +77,7 @@ class IntentService:
 请将用户输入解析为 StructuredIntent JSON。你只负责理解需求，不要生成路线，不要新增 POI。
 StructuredIntent 字段：
 - hard_constraints.must_include_meal: 是否必须包含正餐
+- hard_constraints.must_include_experience: 是否必须包含景点/文化/购物/娱乐/户外等体验点；纯吃饭或纯咖啡可为 false
 - soft_preferences.pace: relaxed/balanced/efficient
 - soft_preferences.avoid_queue/weather_sensitive/photography_priority/food_diversity
 - soft_preferences.custom_notes: 简短证据
@@ -90,6 +110,12 @@ selected_poi_ids={selected_poi_ids}
             ):
                 merged["hard_constraints"]["must_include_meal"] = llm_data["hard_constraints"][
                     "must_include_meal"
+                ]
+            if isinstance(llm_data.get("hard_constraints"), dict) and isinstance(
+                llm_data["hard_constraints"].get("must_include_experience"), bool
+            ):
+                merged["hard_constraints"]["must_include_experience"] = llm_data["hard_constraints"][
+                    "must_include_experience"
                 ]
             if isinstance(llm_data.get("avoid_pois"), list):
                 merged["avoid_pois"] = llm_data["avoid_pois"]

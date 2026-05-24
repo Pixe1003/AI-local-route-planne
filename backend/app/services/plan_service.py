@@ -1,6 +1,7 @@
 from uuid import uuid4
 
-from app.repositories.poi_repo import get_poi_repository
+from app.config import get_settings
+from app.repositories.poi_repo import PoiRepository, get_poi_repository
 from app.schemas.onboarding import UserNeedProfile
 from app.schemas.plan import (
     AlternativePoi,
@@ -16,8 +17,10 @@ from app.schemas.plan import (
 )
 from app.schemas.preferences import PreferenceSnapshot
 from app.services.agent_skill_registry import get_agent_skill_registry
+from app.services.category_policy import CORE_RECOMMENDATION_CATEGORIES, EXPERIENCE_CATEGORIES
 from app.services.intent_service import IntentService
 from app.services.poi_scoring_service import PoiScoringService
+from app.services.retrieval_service import RetrievalService
 from app.services.route_validator import RouteValidator
 from app.services.solver_service import SolverService
 from app.services.state import (
@@ -34,15 +37,20 @@ from app.solver.styles import STYLE_DESCRIPTIONS, STYLE_TITLES
 
 
 class PlanService:
-    EXPERIENCE_CATEGORIES = {"culture", "scenic", "entertainment", "nightlife"}
-
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        repo: PoiRepository | None = None,
+        retrieval_service: RetrievalService | None = None,
+        solver: SolverService | None = None,
+    ) -> None:
         self.agent_skill = get_agent_skill_registry().get_skill("route_planning")
-        self.repo = get_poi_repository()
-        self.ugc_service = UgcService()
+        self.repo = repo or get_poi_repository()
+        self.ugc_service = UgcService(repo=self.repo)
         self.intent_service = IntentService()
         self.poi_scorer = PoiScoringService()
-        self.validator = RouteValidator()
+        self.validator = RouteValidator(repo=self.repo)
+        self.retrieval_service = retrieval_service or RetrievalService(repo=self.repo)
+        self.solver = solver or SolverService(repo=self.repo)
 
     def generate_plans(self, request: PlanRequest) -> PlanResponse:
         context = self._resolve_context(request)
@@ -63,7 +71,7 @@ class PlanService:
         )
         run_state.phase = "PLANNING"
         run_state.user_intent = intent.model_dump()
-        skeletons = SolverService().solve(
+        skeletons = self.solver.solve(
             intent,
             selected_poi_ids,
             context=context,
@@ -154,7 +162,7 @@ class PlanService:
                 reason=skeleton.drop_reasons.get(poi_id, "时间窗不足"),
             )
             for poi_id in skeleton.dropped_poi_ids
-            if poi_id in {poi.id for poi in self.repo.list_by_city(context.city)}
+            if self._is_city_poi(poi_id, context.city)
         ]
         validation = self.validator.validate(skeleton, intent, context, profile)
         plan = RefinedPlan(
@@ -187,20 +195,29 @@ class PlanService:
         preference_snapshot: PreferenceSnapshot | None,
     ) -> list[AlternativePoi]:
         route_ids = {stop.poi_id for stop in plan.stops}
+        retrieved = self.retrieval_service.retrieve(
+            self._alternative_retrieval_query(intent, context, profile, preference_snapshot)
+        )
+        retrieved_by_id = {item.poi_id: item for item in retrieved}
+        fallback_pois = self._alternative_fallback_pois(context.city)
+        fallback_by_id = {poi.id: poi for poi in fallback_pois}
         candidate_ids = list(dict.fromkeys(
             [
                 *(preference_snapshot.liked_poi_ids if preference_snapshot else []),
                 *[dropped.poi_id for dropped in plan.summary.dropped_pois],
-                *[poi.id for poi in self.repo.list_by_city(context.city)],
+                *[item.poi_id for item in retrieved],
+                *[poi.id for poi in fallback_pois],
             ]
         ))
         alternatives: list[AlternativePoi] = []
         for poi_id in candidate_ids:
             if poi_id in route_ids:
                 continue
-            if poi_id not in {poi.id for poi in self.repo.list_by_city(context.city)}:
-                continue
-            poi = self.repo.get(poi_id)
+            poi = fallback_by_id.get(poi_id)
+            if poi is None:
+                if not self._is_city_poi(poi_id, context.city):
+                    continue
+                poi = self.repo.get(poi_id)
             score = self.poi_scorer.score_poi(
                 poi,
                 intent=intent,
@@ -219,6 +236,7 @@ class PlanService:
                 )
             liked = preference_snapshot and poi.id in preference_snapshot.liked_poi_ids
             reason = self._alternative_reason(poi, score, liked, intent)
+            retrieved_item = retrieved_by_id.get(poi.id)
             alternatives.append(
                 AlternativePoi(
                     poi_id=poi.id,
@@ -230,6 +248,9 @@ class PlanService:
                     estimated_queue_min=poi.queue_estimate["weekend_peak"],
                     estimated_cost=poi.price_per_person,
                     score_breakdown=score.model_dump(),
+                    retrieval_score=retrieved_item.score if retrieved_item else None,
+                    retrieval_provenance=retrieved_item.provenance if retrieved_item else [],
+                    evidence_snippets=retrieved_item.evidence_snippets if retrieved_item else [],
                 )
             )
         alternatives.sort(
@@ -243,13 +264,58 @@ class PlanService:
         )
         return alternatives[:8]
 
+    def _alternative_fallback_pois(self, city: str):
+        city_pois = self.repo.list_by_city(city, limit=500)
+        return sorted(
+            city_pois,
+            key=lambda poi: (
+                poi.category not in CORE_RECOMMENDATION_CATEGORIES,
+                poi.queue_estimate["weekend_peak"],
+                -(poi.rating or 0),
+                -(poi.review_count or 0),
+            ),
+        )[:160]
+
+    def _is_city_poi(self, poi_id: str, city: str) -> bool:
+        try:
+            return self.repo.get(poi_id).city == city
+        except KeyError:
+            return False
+
+    def _alternative_retrieval_query(
+        self,
+        intent: StructuredIntent,
+        context: PlanContext,
+        profile: UserNeedProfile,
+        preference_snapshot: PreferenceSnapshot | None,
+    ):
+        from app.schemas.rag import RetrievalQuery
+
+        terms = [
+            profile.raw_query or "",
+            *profile.activity_preferences,
+            *profile.food_preferences,
+            *profile.route_style,
+            *intent.soft_preferences.custom_notes,
+        ]
+        if preference_snapshot:
+            terms.extend(list(preference_snapshot.tag_weights)[:8])
+            terms.extend(list(preference_snapshot.keyword_weights)[:8])
+        return RetrievalQuery(
+            city=context.city,
+            text=" ".join(term for term in terms if term),
+            top_k=40,
+            budget_per_person=context.budget_per_person,
+            avoid_queue=intent.soft_preferences.avoid_queue,
+        )
+
     def _replacement_index(self, plan: RefinedPlan, category: str) -> int:
         for index, stop in enumerate(plan.stops):
             if stop.category == category:
                 return index
-        if category in self.EXPERIENCE_CATEGORIES:
+        if category in EXPERIENCE_CATEGORIES:
             for index, stop in enumerate(plan.stops):
-                if stop.category in self.EXPERIENCE_CATEGORIES:
+                if stop.category in EXPERIENCE_CATEGORIES:
                     return index
         return min(1, len(plan.stops) - 1) if plan.stops else 0
 
@@ -295,7 +361,7 @@ class PlanService:
         if request.need_profile:
             return request.need_profile.to_plan_context()
         return PlanContext(
-            city="shanghai",
+            city=get_settings().default_city,
             date="2026-05-02",
             time_window={"start": "13:00", "end": "21:00"},
             party="friends",

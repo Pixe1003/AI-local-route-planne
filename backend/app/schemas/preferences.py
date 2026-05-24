@@ -5,7 +5,7 @@ class PreferenceSnapshotRequest(BaseModel):
     user_id: str
     liked_poi_ids: list[str] = Field(default_factory=list)
     disliked_poi_ids: list[str] = Field(default_factory=list)
-    city: str = "shanghai"
+    city: str = "hefei"
 
 
 class PreferenceSnapshot(BaseModel):

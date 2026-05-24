@@ -1,9 +1,11 @@
 import type { UserNeedProfile } from "../types/onboarding"
 import type { PlanContext } from "../types/plan"
 
+export const DEFAULT_CITY = "hefei"
+
 export function planningContextFromProfile(profile: UserNeedProfile): PlanContext {
   return {
-    city: profile.destination.city || "shanghai",
+    city: profile.destination.city || DEFAULT_CITY,
     date: profile.date,
     time_window: {
       start: profile.time.start_time || "13:00",
@@ -15,7 +17,7 @@ export function planningContextFromProfile(profile: UserNeedProfile): PlanContex
 }
 
 export function cityLabel(city: string): string {
-  return { shanghai: "上海", nanjing: "南京" }[city] ?? city
+  return { hefei: "合肥", shanghai: "上海", nanjing: "南京" }[city] ?? city
 }
 
 export function versionSourceLabel(source: string): string {

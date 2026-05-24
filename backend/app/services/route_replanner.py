@@ -1,6 +1,6 @@
 from pydantic import BaseModel
 
-from app.repositories.poi_repo import get_poi_repository
+from app.repositories.poi_repo import PoiRepository, get_poi_repository
 from app.schemas.plan import (
     RefinedPlan,
     RefinedStop,
@@ -12,6 +12,7 @@ from app.schemas.plan import (
 )
 from app.services.agent_skill_registry import get_agent_skill_registry
 from app.services.poi_scoring_service import PoiScoringService
+from app.services.retrieval_service import RetrievalService
 from app.services.route_validator import RouteValidator
 from app.services.state import PLAN_CONTEXT_REGISTRY, PLAN_PROFILE_REGISTRY
 from app.services.ugc_service import UgcService
@@ -35,12 +36,17 @@ class ReplanResponse(BaseModel):
 
 
 class RouteReplanner:
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        repo: PoiRepository | None = None,
+        retrieval_service: RetrievalService | None = None,
+    ) -> None:
         self.agent_skill = get_agent_skill_registry().get_skill("replan")
-        self.repo = get_poi_repository()
-        self.ugc_service = UgcService()
+        self.repo = repo or get_poi_repository()
+        self.ugc_service = UgcService(repo=self.repo)
         self.poi_scorer = PoiScoringService()
-        self.validator = RouteValidator()
+        self.validator = RouteValidator(repo=self.repo)
+        self.retrieval_service = retrieval_service or RetrievalService(repo=self.repo)
 
     def replan(self, plan: RefinedPlan, event: ReplanEvent) -> ReplanResponse:
         if event.event_type == "REPLACE_WITH_ALTERNATIVE":
@@ -104,11 +110,18 @@ class RouteReplanner:
         if event.message and ("第二" in event.message or "2" in event.message) and len(updated.stops) > 1:
             target_index = 1
         old_stop = updated.stops[target_index]
-        replacement = self.repo.find_replacement(
+        replacement = self._retrieval_replacement(
+            old_stop=old_stop,
             exclude_ids={stop.poi_id for stop in updated.stops},
-            category_hint=old_stop.category,
-            avoid_queue=True,
+            message=event.message or "低排队 同类",
         )
+        if replacement is None:
+            replacement = self.repo.find_replacement(
+                exclude_ids={stop.poi_id for stop in updated.stops},
+                category_hint=old_stop.category,
+                avoid_queue=True,
+                city=self.repo.get(old_stop.poi_id).city,
+            )
         if replacement is None:
             return updated
         updated.stops[target_index] = self._make_refined_stop(replacement, old_stop)
@@ -145,6 +158,7 @@ class RouteReplanner:
             exclude_ids={stop.poi_id for stop in updated.stops},
             category_hint=old_stop.category,
             avoid_queue=False,
+            city=self.repo.get(old_stop.poi_id).city,
         )
         if replacement and (replacement.price_per_person or 0) < (old_stop.estimated_cost or 0):
             updated.stops[target_index] = self._make_refined_stop(replacement, old_stop)
@@ -166,6 +180,7 @@ class RouteReplanner:
             exclude_ids={stop.poi_id for stop in updated.stops},
             category_hint="cafe",
             avoid_queue=True,
+            city=self.repo.get(updated.stops[0].poi_id).city if updated.stops else None,
         )
         if cafe is None:
             return updated
@@ -260,3 +275,30 @@ class RouteReplanner:
             context,
         )
         return self.validator.validate(skeleton, intent, context, profile)
+
+    def _retrieval_replacement(
+        self,
+        *,
+        old_stop: RefinedStop,
+        exclude_ids: set[str],
+        message: str,
+    ):
+        from app.schemas.rag import RetrievalQuery
+
+        try:
+            old_poi = self.repo.get(old_stop.poi_id)
+        except KeyError:
+            return None
+        results = self.retrieval_service.retrieve(
+            RetrievalQuery(
+                city=old_poi.city,
+                text=message,
+                top_k=12,
+                category_filters=[old_stop.category],
+                avoid_queue=True,
+            )
+        )
+        for item in results:
+            if item.poi_id not in exclude_ids:
+                return self.repo.get(item.poi_id)
+        return None

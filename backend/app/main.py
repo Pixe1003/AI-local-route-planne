@@ -12,6 +12,7 @@ from app.api import (
     routes_ugc,
 )
 from app.config import get_settings
+from app.repositories.rag_index import get_rag_status
 
 settings = get_settings()
 
@@ -36,5 +37,5 @@ app.include_router(routes_preferences.router, prefix="/api")
 
 
 @app.get("/health")
-def health() -> dict[str, str]:
-    return {"status": "ok", "service": settings.app_name}
+def health() -> dict[str, object]:
+    return {"status": "ok", "service": settings.app_name, "rag": get_rag_status()}

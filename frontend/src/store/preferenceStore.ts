@@ -3,6 +3,7 @@ import { create } from "zustand"
 import { buildPreferenceSnapshot } from "../api/preferences"
 import type { PreferenceSnapshot, PreferenceSnapshotRequest } from "../types/preferences"
 import type { UgcFeedItem } from "../types/ugc"
+import { DEFAULT_CITY } from "../utils/planning"
 
 const LIKE_STORAGE_KEY = "airoute.likes"
 const ITEM_STORAGE_KEY = "airoute.likedItems"
@@ -60,13 +61,13 @@ export const usePreferenceStore = create<PreferenceStore>((set, get) => ({
     persist(likedPoiIds, likedItems)
     set({ likedPoiIds, likedItems, snapshot: null })
   },
-  snapshotRequest: (userId, city = "shanghai") => ({
+  snapshotRequest: (userId, city = DEFAULT_CITY) => ({
     user_id: userId,
     city,
     liked_poi_ids: get().likedPoiIds,
     disliked_poi_ids: []
   }),
-  syncSnapshot: async (userId, city = "shanghai") => {
+  syncSnapshot: async (userId, city = DEFAULT_CITY) => {
     set({ loading: true, error: null })
     try {
       const snapshot = await buildPreferenceSnapshot(get().snapshotRequest(userId, city))

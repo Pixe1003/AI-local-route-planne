@@ -12,7 +12,7 @@ import type { UserNeedProfile } from "../types/onboarding"
 import type { PreferenceSnapshot } from "../types/preferences"
 import type { PoolRequest } from "../types/pool"
 import type { UgcFeedItem } from "../types/ugc"
-import { planningContextFromProfile } from "../utils/planning"
+import { DEFAULT_CITY, planningContextFromProfile } from "../utils/planning"
 
 const categoryLabels: Record<string, string> = {
   restaurant: "餐饮",
@@ -57,9 +57,9 @@ export function DiscoveryFeedPage() {
   const buildProfile = (): UserNeedProfile => ({
     user_id: userId,
     destination: {
-      city: "shanghai",
-      start_location: "人民广场",
-      target_area: "上海核心城区",
+      city: DEFAULT_CITY,
+      start_location: "合肥市中心",
+      target_area: "合肥核心城区",
       end_location: null
     },
     time: {
@@ -83,7 +83,7 @@ export function DiscoveryFeedPage() {
 
   const poolRequest = (profile: UserNeedProfile, snapshot: PreferenceSnapshot): PoolRequest => ({
     user_id: userId,
-    city: "shanghai",
+    city: DEFAULT_CITY,
     date,
     time_window: { start, end },
     persona_tags: ["foodie", "photographer"],
@@ -97,7 +97,7 @@ export function DiscoveryFeedPage() {
 
   const submit = async (event: FormEvent) => {
     event.preventDefault()
-    const snapshot = await syncSnapshot(userId, "shanghai")
+    const snapshot = await syncSnapshot(userId, DEFAULT_CITY)
     if (!snapshot) return
     const profile = buildProfile()
     setNeedProfile(profile)

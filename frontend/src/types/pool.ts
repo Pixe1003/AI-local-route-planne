@@ -6,6 +6,13 @@ export interface TimeWindow {
   end: string
 }
 
+export interface EvidenceSnippet {
+  doc_id: string
+  source_type: string
+  text: string
+  score: number
+}
+
 export interface PoolRequest {
   user_id: string
   city: string
@@ -34,6 +41,9 @@ export interface PoiInPool {
   estimated_queue_min?: number | null
   suitable_score: number
   score_breakdown: Record<string, number>
+  retrieval_score?: number | null
+  retrieval_provenance?: string[]
+  evidence_snippets?: EvidenceSnippet[]
 }
 
 export interface PoolCategory {

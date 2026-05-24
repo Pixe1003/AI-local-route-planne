@@ -20,7 +20,7 @@ import { useUserStore } from "../store/userStore"
 import type { OnboardingAnalyzeResponse, UserNeedProfile } from "../types/onboarding"
 import type { PoolRequest } from "../types/pool"
 import type { PersonaOption } from "../types/user"
-import { planningContextFromProfile } from "../utils/planning"
+import { DEFAULT_CITY, planningContextFromProfile } from "../utils/planning"
 
 const fallbackPersonas: PersonaOption[] = [
   { value: "couple", label: "情侣约会" },
@@ -57,7 +57,7 @@ export function TripCreatePage() {
   const { generatePlans, loading: planLoading } = usePlanStore()
   const { saveVersion, loading: tripLoading, error: tripError } = useTripStore()
   const [personas, setPersonas] = useState(fallbackPersonas)
-  const [freeText, setFreeText] = useState("今天 14:00 到 20:00 在上海从人民广场出发，情侣想拍照吃本地菜，人均 180，少排队")
+  const [freeText, setFreeText] = useState("今天 14:00 到 20:00 在合肥从市中心出发，情侣想吃徽菜和找文艺休息点，人均 180，少排队")
   const [selectedQuickTags, setSelectedQuickTags] = useState(["avoid_queue", "local_food", "photogenic"])
   const [date, setDate] = useState("2026-05-02")
   const [start, setStart] = useState("14:00")
@@ -104,7 +104,7 @@ export function TripCreatePage() {
     const query = composedQuery()
     const profile = (
       await buildNeedProfile(query, {
-        city: "shanghai",
+        city: DEFAULT_CITY,
         date,
         start_time: start,
         end_time: end,
@@ -124,7 +124,7 @@ export function TripCreatePage() {
 
   const poolRequest = (query: string, profile: UserNeedProfile): PoolRequest => ({
     user_id: userId,
-    city: "shanghai",
+    city: DEFAULT_CITY,
     date,
     time_window: { start, end },
     persona_tags: personaTags,
@@ -188,7 +188,7 @@ export function TripCreatePage() {
         <form className="planner-form" onSubmit={submitToPool}>
           <label>
             <span>城市</span>
-            <input readOnly value="上海" />
+            <input readOnly value="合肥" />
           </label>
           <div className="form-row">
             <label>

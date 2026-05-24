@@ -5,6 +5,7 @@ from pydantic import BaseModel, Field
 from app.schemas.onboarding import UserNeedProfile
 from app.schemas.pool import TimeWindow
 from app.schemas.preferences import PreferenceSnapshot
+from app.schemas.rag import EvidenceSnippet
 
 
 class PlanContext(BaseModel):
@@ -13,6 +14,9 @@ class PlanContext(BaseModel):
     time_window: TimeWindow
     party: Optional[str] = None
     budget_per_person: Optional[int] = None
+    origin_latitude: Optional[float] = None
+    origin_longitude: Optional[float] = None
+    radius_meters: Optional[int] = None
 
 
 class HardConstraints(BaseModel):
@@ -21,6 +25,7 @@ class HardConstraints(BaseModel):
     budget_total: Optional[int] = None
     transport_mode: str = "mixed"
     must_include_meal: bool = False
+    must_include_experience: bool = True
 
 
 class SoftPreferences(BaseModel):
@@ -117,6 +122,9 @@ class RefinedStop(BaseModel):
     score_breakdown: dict[str, float] = Field(default_factory=dict)
     estimated_queue_min: Optional[int] = None
     estimated_cost: Optional[int] = None
+    retrieval_score: Optional[float] = None
+    retrieval_provenance: list[str] = Field(default_factory=list)
+    evidence_snippets: list[EvidenceSnippet] = Field(default_factory=list)
 
 
 class DroppedPoi(BaseModel):
@@ -147,6 +155,9 @@ class AlternativePoi(BaseModel):
     estimated_queue_min: Optional[int] = None
     estimated_cost: Optional[int] = None
     score_breakdown: dict[str, float] = Field(default_factory=dict)
+    retrieval_score: Optional[float] = None
+    retrieval_provenance: list[str] = Field(default_factory=list)
+    evidence_snippets: list[EvidenceSnippet] = Field(default_factory=list)
 
 
 class RefinedPlan(BaseModel):

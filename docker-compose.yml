@@ -21,8 +21,14 @@
       LLM_AUTH_HEADER: ${LLM_AUTH_HEADER:-authorization}
       LLM_TIMEOUT_SECONDS: ${LLM_TIMEOUT_SECONDS:-20}
       DATABASE_URL: postgresql://local_route:local_route@postgres:5432/local_route
+      POI_SQLITE_PATH: /app/data/processed/hefei_pois.sqlite
+      RAG_ENABLED: ${RAG_ENABLED:-true}
       VECTOR_DB_PATH: /app/data/chroma
-      DEFAULT_CITY: shanghai
+      EMBEDDING_BASE_URL: ${EMBEDDING_BASE_URL:-https://api.openai.com/v1}
+      EMBEDDING_API_KEY: ${EMBEDDING_API_KEY:-}
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-text-embedding-3-small}
+      EMBEDDING_TIMEOUT_SECONDS: ${EMBEDDING_TIMEOUT_SECONDS:-30}
+      DEFAULT_CITY: hefei
     ports:
       - "8000:8000"
     volumes:

@@ -1,6 +1,7 @@
 from app.schemas.onboarding import UserNeedProfile
 from app.schemas.plan import PlanContext, ScoreBreakdown, StructuredIntent
 from app.schemas.preferences import PreferenceSnapshot
+from app.services.location_context import distance_from_origin, origin_from_context
 
 
 class PoiScoringService:
@@ -31,7 +32,7 @@ class PoiScoringService:
         history_preference = self._history_preference_score(poi, preference_snapshot)
         queue_penalty = self._queue_penalty(poi, intent, text)
         price_penalty = self._price_penalty(poi, intent, profile)
-        distance_penalty = 0.0
+        distance_penalty = self._distance_penalty(poi, context)
         risk_penalty = -4.0 if poi.queue_estimate["weekend_peak"] > 45 else 0.0
         total = (
             user_interest
@@ -129,3 +130,15 @@ class PoiScoringService:
         if budget and poi.price_per_person and poi.price_per_person > budget:
             return -14.0
         return 0.0
+
+    def _distance_penalty(self, poi, context: PlanContext | None) -> float:
+        origin = origin_from_context(context)
+        if origin is None:
+            return 0.0
+        distance = distance_from_origin(poi, origin)
+        if distance is None:
+            return 0.0
+        free_meters = 1500
+        if distance <= free_meters:
+            return 0.0
+        return -min((distance - free_meters) / 1000 * 1.8, 18.0)

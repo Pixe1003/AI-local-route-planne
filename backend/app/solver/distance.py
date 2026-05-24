@@ -5,11 +5,20 @@ from app.schemas.plan import Transport
 
 
 def haversine_meters(a: PoiDetail, b: PoiDetail) -> int:
+    return haversine_coordinate_meters(a.latitude, a.longitude, b.latitude, b.longitude)
+
+
+def haversine_coordinate_meters(
+    latitude_a: float,
+    longitude_a: float,
+    latitude_b: float,
+    longitude_b: float,
+) -> int:
     radius = 6_371_000
-    dlat = radians(b.latitude - a.latitude)
-    dlng = radians(b.longitude - a.longitude)
-    lat1 = radians(a.latitude)
-    lat2 = radians(b.latitude)
+    dlat = radians(latitude_b - latitude_a)
+    dlng = radians(longitude_b - longitude_a)
+    lat1 = radians(latitude_a)
+    lat2 = radians(latitude_b)
     h = sin(dlat / 2) ** 2 + cos(lat1) * cos(lat2) * sin(dlng / 2) ** 2
     return int(2 * radius * asin(sqrt(h)) * 1.3)
 

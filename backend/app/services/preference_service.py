@@ -7,7 +7,14 @@ class PreferenceService:
         self.repo = get_poi_repository()
 
     def build_snapshot(self, request: PreferenceSnapshotRequest) -> PreferenceSnapshot:
-        city_pois = {poi.id: poi for poi in self.repo.list_by_city(request.city)}
+        city_pois = {}
+        for poi_id in list(dict.fromkeys([*request.liked_poi_ids, *request.disliked_poi_ids])):
+            try:
+                poi = self.repo.get(poi_id)
+            except KeyError:
+                continue
+            if poi.city == request.city:
+                city_pois[poi_id] = poi
         liked_ids = [poi_id for poi_id in request.liked_poi_ids if poi_id in city_pois]
         disliked_ids = [poi_id for poi_id in request.disliked_poi_ids if poi_id in city_pois]
 

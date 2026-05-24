@@ -6,7 +6,7 @@ import { usePlanStore } from "../store/planStore"
 import { usePoolStore } from "../store/poolStore"
 import { useTripStore } from "../store/tripStore"
 import { useUserStore } from "../store/userStore"
-import { planningContextFromProfile } from "../utils/planning"
+import { DEFAULT_CITY, planningContextFromProfile } from "../utils/planning"
 
 export function RecommendPoolPage() {
   const navigate = useNavigate()
@@ -35,7 +35,7 @@ export function RecommendPoolPage() {
       context: needProfile
         ? undefined
         : {
-            city: "shanghai",
+            city: DEFAULT_CITY,
             date: "2026-05-02",
             time_window: { start: "13:00", end: "21:00" },
             party: "couple",

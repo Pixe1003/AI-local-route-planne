@@ -1,4 +1,4 @@
-import type { TimeWindow } from "./pool"
+import type { EvidenceSnippet, TimeWindow } from "./pool"
 import type { UserNeedProfile } from "./onboarding"
 import type { PreferenceSnapshot } from "./preferences"
 
@@ -46,6 +46,9 @@ export interface RefinedStop {
   score_breakdown: Record<string, number>
   estimated_queue_min?: number | null
   estimated_cost?: number | null
+  retrieval_score?: number | null
+  retrieval_provenance?: string[]
+  evidence_snippets?: EvidenceSnippet[]
 }
 
 export interface DroppedPoi {
@@ -80,6 +83,9 @@ export interface AlternativePoi {
   estimated_queue_min?: number | null
   estimated_cost?: number | null
   score_breakdown: Record<string, number>
+  retrieval_score?: number | null
+  retrieval_provenance?: string[]
+  evidence_snippets?: EvidenceSnippet[]
 }
 
 export interface RefinedPlan {

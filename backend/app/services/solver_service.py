@@ -1,7 +1,14 @@
+from app.config import get_settings
 from app.repositories.poi_repo import get_poi_repository
+from app.repositories.poi_repo import PoiRepository
 from app.schemas.onboarding import UserNeedProfile
 from app.schemas.plan import RouteMetrics, RouteSkeleton, RouteStop, StructuredIntent
 from app.schemas.preferences import PreferenceSnapshot
+from app.services.category_policy import (
+    EXPERIENCE_CATEGORIES,
+    RESTAURANT_CATEGORIES,
+    ROUTE_ANCHOR_CATEGORIES,
+)
 from app.services.poi_scoring_service import PoiScoringService
 from app.services.route_repairer import RouteRepairer
 from app.solver.distance import estimate_transport, haversine_meters
@@ -10,10 +17,8 @@ from app.utils.time_utils import add_minutes, minutes_between
 
 
 class SolverService:
-    EXPERIENCE_CATEGORIES = {"culture", "scenic", "entertainment", "nightlife"}
-
-    def __init__(self) -> None:
-        self.repo = get_poi_repository()
+    def __init__(self, repo: PoiRepository | None = None) -> None:
+        self.repo = repo or get_poi_repository()
         self.poi_scorer = PoiScoringService()
 
     def solve(
@@ -25,8 +30,12 @@ class SolverService:
         profile: UserNeedProfile | None = None,
         preference_snapshot: PreferenceSnapshot | None = None,
     ) -> list[RouteSkeleton]:
-        ids = self._ensure_minimum_candidates(candidate_poi_ids, context.city if context else "shanghai")
-        repairer = RouteRepairer()
+        ids = self._ensure_minimum_candidates(
+            candidate_poi_ids,
+            context.city if context else get_settings().default_city,
+            intent,
+        )
+        repairer = RouteRepairer(repo=self.repo)
         return [
             repairer.repair(
                 self._solve_style(intent, ids, style, profile, preference_snapshot),
@@ -38,17 +47,27 @@ class SolverService:
             for style in PLAN_STYLES
         ]
 
-    def _ensure_minimum_candidates(self, candidate_poi_ids: list[str], city: str) -> list[str]:
+    def _ensure_minimum_candidates(
+        self, candidate_poi_ids: list[str], city: str, intent: StructuredIntent
+    ) -> list[str]:
         ids = list(dict.fromkeys(candidate_poi_ids))
-        city_pois = self.repo.list_by_city(city) or self.repo.list_by_city("shanghai")
-        categories = {self.repo.get(poi_id).category for poi_id in ids if poi_id in {poi.id for poi in city_pois}}
-        if "restaurant" not in categories:
-            self._append_first_category(ids, city_pois, {"restaurant"})
-        if not categories & self.EXPERIENCE_CATEGORIES:
-            self._append_first_category(ids, city_pois, self.EXPERIENCE_CATEGORIES)
-        self._append_first_category(ids, city_pois, {"restaurant"})
-        self._append_first_category(ids, city_pois, self.EXPERIENCE_CATEGORIES)
-        self._append_first_category(ids, city_pois, {"cafe"})
+        city_pois = self.repo.list_by_city(city, limit=500)
+        city_poi_by_id = {poi.id: poi for poi in city_pois}
+        categories = {
+            city_poi_by_id[poi_id].category
+            for poi_id in ids
+            if poi_id in city_poi_by_id
+        }
+        if intent.hard_constraints.must_include_meal and "restaurant" not in categories:
+            self._append_first_category(ids, city_pois, RESTAURANT_CATEGORIES)
+        if intent.hard_constraints.must_include_experience and not categories & EXPERIENCE_CATEGORIES:
+            self._append_first_category(ids, city_pois, EXPERIENCE_CATEGORIES)
+        if intent.hard_constraints.must_include_meal:
+            self._append_first_category(ids, city_pois, RESTAURANT_CATEGORIES)
+        if intent.hard_constraints.must_include_experience:
+            self._append_first_category(ids, city_pois, EXPERIENCE_CATEGORIES)
+        if intent.hard_constraints.must_include_meal or not intent.hard_constraints.must_include_experience:
+            self._append_first_category(ids, city_pois, {"cafe"})
         for poi in city_pois:
             if poi.id not in ids:
                 ids.append(poi.id)
@@ -81,7 +100,7 @@ class SolverService:
         )
         max_count = {"efficient": 5, "relaxed": 4, "foodie_first": 4}[style]
         route_pois = sorted_pois[: max(3, min(max_count, len(sorted_pois)))]
-        route_pois = self._ensure_route_coverage(route_pois, sorted_pois)
+        route_pois = self._ensure_route_coverage(route_pois, sorted_pois, intent)
         route_pois = self._fit_budget(route_pois, sorted_pois, intent)
         if style == "efficient":
             route_pois = self._nearest_order(route_pois)
@@ -91,14 +110,14 @@ class SolverService:
             route_pois = sorted(route_pois, key=lambda poi: (poi.queue_estimate["weekend_peak"], -poi.rating))
         return self._build_route(style, route_pois, intent, candidate_poi_ids)
 
-    def _ensure_route_coverage(self, route_pois, sorted_pois):
+    def _ensure_route_coverage(self, route_pois, sorted_pois, intent: StructuredIntent):
         next_pois = list(route_pois)
         categories = {poi.category for poi in next_pois}
-        if "restaurant" not in categories:
-            self._replace_for_category(next_pois, sorted_pois, {"restaurant"})
+        if intent.hard_constraints.must_include_meal and "restaurant" not in categories:
+            self._replace_for_category(next_pois, sorted_pois, RESTAURANT_CATEGORIES)
         categories = {poi.category for poi in next_pois}
-        if not categories & self.EXPERIENCE_CATEGORIES:
-            self._replace_for_category(next_pois, sorted_pois, self.EXPERIENCE_CATEGORIES)
+        if intent.hard_constraints.must_include_experience and not categories & EXPERIENCE_CATEGORIES:
+            self._replace_for_category(next_pois, sorted_pois, EXPERIENCE_CATEGORIES)
         return next_pois
 
     def _replace_for_category(self, route_pois, sorted_pois, categories: set[str]) -> None:
@@ -106,7 +125,7 @@ class SolverService:
         if replacement is None:
             return
         for index in range(len(route_pois) - 1, -1, -1):
-            if route_pois[index].category not in {"restaurant", *self.EXPERIENCE_CATEGORIES}:
+            if route_pois[index].category not in ROUTE_ANCHOR_CATEGORIES:
                 route_pois[index] = replacement
                 return
         route_pois[-1] = replacement
@@ -126,8 +145,8 @@ class SolverService:
             )
             old = next_pois[expensive_index]
             category_options = {old.category}
-            if old.category in self.EXPERIENCE_CATEGORIES:
-                category_options = self.EXPERIENCE_CATEGORIES
+            if old.category in EXPERIENCE_CATEGORIES:
+                category_options = EXPERIENCE_CATEGORIES
             replacement = next(
                 (
                     poi
@@ -141,7 +160,7 @@ class SolverService:
             if replacement is None:
                 return next_pois
             next_pois[expensive_index] = replacement
-            next_pois = self._ensure_route_coverage(next_pois, sorted_pois)
+            next_pois = self._ensure_route_coverage(next_pois, sorted_pois, intent)
         return next_pois
 
     def _build_route(

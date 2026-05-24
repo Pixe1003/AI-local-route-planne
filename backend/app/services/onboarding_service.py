@@ -2,6 +2,7 @@ import re
 
 from pydantic import ValidationError
 
+from app.config import get_settings
 from app.llm.client import LlmClient
 from app.schemas.onboarding import (
     BudgetProfile,
@@ -69,7 +70,7 @@ class OnboardingService:
 请将用户输入解析为 UserNeedProfile JSON。仅补充你能从文本中确定的信息，不要编造 POI 或路线。
 
 UserNeedProfile 字段：
-- destination.city: 城市英文标识，上海用 shanghai，南京用 nanjing
+- destination.city: 城市英文标识，合肥用 hefei，上海用 shanghai，南京用 nanjing
 - destination.start_location: 出发地
 - time.start_time/end_time/time_budget_minutes
 - activity_preferences: 活动偏好数组
@@ -95,8 +96,10 @@ UserNeedProfile 字段：
             return fallback
 
     def _destination_from_text(self, text: str) -> DestinationProfile:
-        city = "shanghai"
-        if "南京" in text:
+        city = get_settings().default_city
+        if "合肥" in text:
+            city = "hefei"
+        elif "南京" in text:
             city = "nanjing"
         elif "上海" in text:
             city = "shanghai"

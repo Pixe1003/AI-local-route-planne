@@ -1,5 +1,6 @@
 from fastapi import APIRouter, HTTPException
 
+from app.config import get_settings
 from app.repositories.poi_repo import get_poi_repository
 
 router = APIRouter(tags=["meta"])
@@ -33,7 +34,12 @@ def personas() -> list[dict[str, str]]:
 
 @router.get("/meta/cities")
 def cities() -> list[dict[str, str]]:
-    return [{"value": "shanghai", "label": "上海"}]
+    default_city = get_settings().default_city
+    cities = [
+        {"value": "hefei", "label": "合肥"},
+        {"value": "shanghai", "label": "上海"},
+    ]
+    return sorted(cities, key=lambda item: item["value"] != default_city)
 
 
 @router.get("/poi/{poi_id}")
