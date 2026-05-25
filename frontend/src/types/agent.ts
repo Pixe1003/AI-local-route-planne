@@ -21,6 +21,9 @@ export interface AgentRunRequest {
   time_window?: TimeWindow | null
   date: string
   budget_per_person?: number
+  origin_latitude?: number
+  origin_longitude?: number
+  radius_meters?: number
   preference_snapshot?: PreferenceSnapshot
   session_id?: string
   parent_session_id?: string

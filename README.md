@@ -47,6 +47,16 @@ With the backend running, optionally seed demo memory:
 python scripts/warmup_demo_sessions.py
 ```
 
+Build the product-demo FAISS index from real Hefei data before validating RAG:
+
+```powershell
+$env:AIROUTE_REAL_DATA_DIR='D:\Users\12057\Desktop\美团黑客松\AIroute\data\processed'
+python scripts/build_faiss_rag.py --city hefei --sqlite-path "$env:AIROUTE_REAL_DATA_DIR\hefei_pois.sqlite" --require-real-data --index-dir data/faiss
+curl http://127.0.0.1:8000/health
+```
+
+For the demo path, `/health` should show `rag.status=ready`, `faiss.document_count > 0`, and `amap.status=ready` when an Amap Web Service key is configured. Without an Amap key, route generation still falls back to local haversine estimates and marks transport segments as `fallback`.
+
 ```powershell
 cd frontend
 npm install
@@ -59,6 +69,9 @@ Open http://127.0.0.1:5173, like a few UGC cards, then generate an instant route
 
 ```powershell
 AMAP_WEB_SERVICE_KEY=your_amap_web_service_key
+AMAP_KEY=optional_fallback_amap_key
+FAISS_INDEX_PATH=data/faiss
+EMBEDDING_MODEL=BAAI/bge-small-zh-v1.5
 LLM_PROVIDER=longcat
 LLM_BASE_URL=https://api.longcat.ai/v1
 LLM_MODEL=longcat-max
@@ -81,6 +94,8 @@ VITE_AMAP_JS_KEY=your_amap_js_key
 VITE_AMAP_SECURITY_JS_CODE=your_amap_security_js_code
 VITE_API_BASE_URL=http://127.0.0.1:8000/api
 ```
+
+The discovery page now sends `origin_latitude`, `origin_longitude`, and `radius_meters` in pool and agent requests. The backend returns `distance_meters`, retrieval provenance, and evidence snippets for route cards.
 
 ## Observability
 
@@ -154,6 +169,7 @@ curl http://127.0.0.1:8000/api/agent/stream/{session_id}
 curl http://127.0.0.1:8000/metrics
 curl http://127.0.0.1:8000/api/agent/cost/{session_id}
 curl http://127.0.0.1:8000/metrics | findstr agent_cache_hits
+curl http://127.0.0.1:8000/health
 python scripts/replay_trace.py {session_id}
 cd backend
 pytest -q
@@ -175,6 +191,7 @@ npm run build
 - `GET /api/agent/cost/{session_id}`
 - `POST /api/route/chain`
 - `GET /api/ugc/feed`
+- `GET /health`
 - `GET /metrics`
 
 Design details are in [docs/agent_development_plan.md](docs/agent_development_plan.md) and [docs/agent_finalization_plan.md](docs/agent_finalization_plan.md).

@@ -35,6 +35,9 @@ class AgentRunRequest(BaseModel):
     time_window: TimeWindow | None = None
     date: str
     budget_per_person: int | None = None
+    origin_latitude: float | None = None
+    origin_longitude: float | None = None
+    radius_meters: int | None = None
     preference_snapshot: PreferenceSnapshot | None = None
     session_id: str | None = None
     parent_session_id: str | None = None
@@ -145,6 +148,9 @@ def build_initial_state(request: AgentRunRequest) -> AgentState:
         time_window=time_window,
         party="friends",
         budget_per_person=request.budget_per_person,
+        origin_latitude=request.origin_latitude,
+        origin_longitude=request.origin_longitude,
+        radius_meters=request.radius_meters,
     )
     profile = UserNeedProfile.from_plan_context(context, raw_query=request.free_text)
     profile.user_id = request.user_id

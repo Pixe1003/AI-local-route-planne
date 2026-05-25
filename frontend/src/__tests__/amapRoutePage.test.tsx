@@ -299,6 +299,69 @@ describe("AmapRoutePage", () => {
     expect(screen.getByText("scenic and easy to start")).toBeInTheDocument()
   })
 
+  it("renders pool retrieval evidence, provenance, and origin distance for route POIs", async () => {
+    useAmapRouteStore.getState().setRouteRequest({
+      mode: "driving",
+      poi_ids: ["sh_poi_001", "sh_poi_002"],
+      source: "ugc_instant_route",
+      free_text: "quiet route",
+      pool: {
+        pool_id: "pool_1",
+        default_selected_ids: ["sh_poi_001", "sh_poi_002"],
+        meta: {
+          total_count: 2,
+          generated_at: "2026-05-10T00:00:00Z",
+          user_persona_summary: "demo",
+          data_warning: "FAISS index missing"
+        },
+        categories: [
+          {
+            name: "顺路打卡",
+            description: "demo",
+            pois: [
+              {
+                id: "sh_poi_001",
+                name: "外滩",
+                category: "scenic",
+                rating: 4.8,
+                price_per_person: null,
+                cover_image: null,
+                distance_meters: 250,
+                why_recommend: "semantic hit",
+                highlight_quote: "真实 UGC 说这里很出片",
+                keywords: ["出片"],
+                estimated_queue_min: 10,
+                suitable_score: 0.92,
+                score_breakdown: {},
+                retrieval_score: 0.88,
+                retrieval_provenance: ["semantic_ugc_review"],
+                evidence_snippets: [
+                  {
+                    doc_id: "ugc_review:sh_poi_001:0",
+                    source_type: "ugc_review",
+                    text: "真实 UGC 说这里很出片",
+                    score: 0.88
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    })
+
+    render(
+      <MemoryRouter>
+        <AmapRoutePage />
+      </MemoryRouter>
+    )
+
+    expect(await screen.findByText("semantic_ugc_review")).toBeInTheDocument()
+    expect(screen.getByText("真实 UGC 说这里很出片")).toBeInTheDocument()
+    expect(screen.getByText("距出发点 250 m")).toBeInTheDocument()
+    expect(screen.getByText("FAISS index missing")).toBeInTheDocument()
+  })
+
   it("shows the agent thinking panel when trace steps are stored", async () => {
     useAmapRouteStore.getState().setRouteRequest({
       mode: "driving",

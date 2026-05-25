@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   fetchUserFacts: vi.fn(),
   fetchUgcFeed: vi.fn(),
   fetchPool: vi.fn(),
+  fetchSystemHealth: vi.fn(),
   setNeedProfile: vi.fn(),
   setRouteRequest: vi.fn()
 }))
@@ -27,6 +28,10 @@ vi.mock("../api/ugc", () => ({
 vi.mock("../api/agent", () => ({
   runAgentRoute: (payload: unknown) => mocks.runAgentRoute(payload),
   fetchUserFacts: (userId: string, forceRefresh?: boolean) => mocks.fetchUserFacts(userId, forceRefresh)
+}))
+
+vi.mock("../api/health", () => ({
+  fetchSystemHealth: () => mocks.fetchSystemHealth()
 }))
 
 vi.mock("../store/preferenceStore", () => ({
@@ -65,6 +70,14 @@ import { DiscoveryFeedPage } from "../pages/DiscoveryFeedPage"
 describe("DiscoveryFeedPage Amap route flow", () => {
   beforeEach(() => {
     mocks.fetchUgcFeed.mockResolvedValue([])
+    mocks.fetchSystemHealth.mockResolvedValue({
+      status: "ok",
+      rag: { enabled: true, engine: "faiss", status: "ready" },
+      faiss: { enabled: true, index_exists: true, document_count: 120, status: "ready" },
+      amap: { configured: true, status: "ready" },
+      memory: { enabled: true, store_exists: true, status: "ready" },
+      cache: { status: "ready" }
+    })
     mocks.fetchUserFacts.mockResolvedValue({
       user_id: "mock_user",
       typical_budget_range: null,
@@ -129,7 +142,10 @@ describe("DiscoveryFeedPage Amap route flow", () => {
         expect.objectContaining({
           user_id: "mock_user",
           city: "hefei",
-          free_text: expect.stringContaining("少排队")
+          free_text: expect.stringContaining("少排队"),
+          origin_latitude: 31.8206,
+          origin_longitude: 117.2272,
+          radius_meters: 8000
         })
       )
     })
@@ -140,7 +156,8 @@ describe("DiscoveryFeedPage Amap route flow", () => {
           mode: "driving",
           poi_ids: ["sh_poi_001", "sh_poi_002", "sh_poi_003"],
           source: "ugc_instant_route",
-          session_id: "agent_session_1"
+          session_id: "agent_session_1",
+          pool: expect.objectContaining({ pool_id: "pool_1" })
         })
       )
     })

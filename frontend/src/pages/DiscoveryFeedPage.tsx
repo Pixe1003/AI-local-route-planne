@@ -3,6 +3,7 @@ import { FormEvent, useEffect, useMemo, useState } from "react"
 import { useNavigate } from "react-router-dom"
 
 import { runAgentRoute } from "../api/agent"
+import { fetchSystemHealth, type SystemHealth } from "../api/health"
 import { UserMemoryPanel } from "../components/UserMemoryPanel"
 import { fetchUgcFeed } from "../api/ugc"
 import { useAmapRouteStore } from "../store/amapRouteStore"
@@ -25,6 +26,12 @@ const categoryLabels: Record<string, string> = {
   nightlife: "夜景"
 }
 
+const originOptions = [
+  { id: "downtown", label: "合肥市中心", latitude: 31.8206, longitude: 117.2272 },
+  { id: "south_station", label: "合肥南站", latitude: 31.7994, longitude: 117.2906 },
+  { id: "xiaoyaojin", label: "逍遥津", latitude: 31.8682, longitude: 117.2952 }
+]
+
 export function DiscoveryFeedPage() {
   const navigate = useNavigate()
   const { userId, setNeedProfile } = useUserStore()
@@ -39,6 +46,9 @@ export function DiscoveryFeedPage() {
   const [start, setStart] = useState("14:00")
   const [end, setEnd] = useState("20:00")
   const [budget, setBudget] = useState(180)
+  const [originId, setOriginId] = useState(originOptions[0].id)
+  const [radiusMeters, setRadiusMeters] = useState(8000)
+  const [systemHealth, setSystemHealth] = useState<SystemHealth | null>(null)
   const [agentLoading, setAgentLoading] = useState(false)
 
   useEffect(() => {
@@ -47,12 +57,24 @@ export function DiscoveryFeedPage() {
       .catch(error => setFeedError(error instanceof Error ? error.message : "UGC 内容加载失败"))
   }, [])
 
+  useEffect(() => {
+    fetchSystemHealth()
+      .then(setSystemHealth)
+      .catch(() => setSystemHealth(null))
+  }, [])
+
   const likedItems = useMemo(
     () => feed.filter(item => likedPoiIds.includes(item.poi_id)),
     [feed, likedPoiIds]
   )
 
   const busy = preferenceLoading || poolLoading || agentLoading
+  const origin = originOptions.find(item => item.id === originId) ?? originOptions[0]
+  const originPayload = {
+    origin_latitude: origin.latitude,
+    origin_longitude: origin.longitude,
+    radius_meters: radiusMeters
+  }
 
   const buildProfile = (): UserNeedProfile => ({
     user_id: userId,
@@ -92,7 +114,8 @@ export function DiscoveryFeedPage() {
     budget_per_person: budget,
     free_text: query,
     need_profile: profile,
-    preference_snapshot: snapshot
+    preference_snapshot: snapshot,
+    ...originPayload
   })
 
   const submit = async (event: FormEvent) => {
@@ -110,7 +133,8 @@ export function DiscoveryFeedPage() {
         date,
         time_window: { start, end },
         budget_per_person: budget,
-        preference_snapshot: snapshot
+        preference_snapshot: snapshot,
+        ...originPayload
       })
       const routePoiIds = agentResult.ordered_poi_ids.length
         ? agentResult.ordered_poi_ids
@@ -124,6 +148,7 @@ export function DiscoveryFeedPage() {
         poi_ids: routePoiIds,
         source: "ugc_instant_route",
         pool_id: agentResult.pool?.pool_id,
+        pool: agentResult.pool ?? null,
         session_id: agentResult.session_id,
         route_chain: agentResult.route_chain ?? null,
         story_plan: agentResult.story_plan ?? null,
@@ -152,6 +177,7 @@ export function DiscoveryFeedPage() {
       poi_ids: routePoiIds,
       source: "ugc_instant_route",
       pool_id: pool.pool_id,
+      pool,
       free_text: query,
       date,
       time_window: { start, end }
@@ -166,6 +192,13 @@ export function DiscoveryFeedPage() {
           <span className="eyebrow">UGC 偏好冷启动</span>
           <h1>现在就出发</h1>
           <p>收藏会模拟历史偏好，路线会优先参考你喜欢过的标签、类别和 POI。</p>
+          {systemHealth ? (
+            <div className="system-status-row" aria-label="系统状态">
+              <span>RAG {systemHealth.rag?.status ?? "unknown"}</span>
+              <span>FAISS {systemHealth.faiss?.document_count ?? 0}</span>
+              <span>高德 {systemHealth.amap?.status ?? "unknown"}</span>
+            </div>
+          ) : null}
         </div>
       </section>
 
@@ -266,6 +299,28 @@ export function DiscoveryFeedPage() {
             <label>
               <span>结束</span>
               <input onChange={event => setEnd(event.target.value)} type="time" value={end} />
+            </label>
+          </div>
+          <div className="form-row">
+            <label>
+              <span>出发点</span>
+              <select onChange={event => setOriginId(event.target.value)} value={originId}>
+                {originOptions.map(item => (
+                  <option key={item.id} value={item.id}>
+                    {item.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              <span>半径/米</span>
+              <input
+                min={1000}
+                onChange={event => setRadiusMeters(Number(event.target.value))}
+                step={500}
+                type="number"
+                value={radiusMeters}
+              />
             </label>
           </div>
           {poolError ? <p className="error-text">{poolError}</p> : null}

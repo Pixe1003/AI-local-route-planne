@@ -64,7 +64,7 @@
         'str',
       ]),
       'meta': dict({
-        'data_warning': 'NoneType',
+        'data_warning': 'str',
         'generated_at': 'str',
         'total_count': 'int',
         'user_persona_summary': 'str',

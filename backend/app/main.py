@@ -58,28 +58,40 @@ def health() -> dict:
     faiss_index = FaissVectorIndex(settings.faiss_index_path)
     project_root = Path(__file__).resolve().parents[2]
     memory_db = project_root / "data" / "processed" / "agent_sessions.sqlite"
+    faiss_exists = faiss_index.exists()
+    faiss_count = faiss_index.count()
+    rag_status = "disabled"
+    if settings.rag_enabled:
+        rag_status = "ready" if faiss_exists and faiss_count > 0 else "degraded"
+    amap_configured = bool(settings.amap_web_service_key or settings.amap_key)
+    memory_exists = memory_db.exists()
     return {
         "status": "ok",
         "service": settings.app_name,
         "rag": {
             "enabled": settings.rag_enabled,
             "engine": "faiss",
+            "status": rag_status,
         },
         "faiss": {
             "enabled": settings.rag_enabled,
             "index_path": str(faiss_index.index_path),
-            "index_exists": faiss_index.exists(),
-            "document_count": faiss_index.count(),
+            "index_exists": faiss_exists,
+            "document_count": faiss_count,
+            "status": "ready" if faiss_exists and faiss_count > 0 else "missing_index",
         },
         "amap": {
-            "configured": bool(settings.amap_web_service_key or settings.amap_key),
+            "configured": amap_configured,
             "base_url": settings.amap_route_base_url,
+            "status": "ready" if amap_configured else "degraded",
         },
         "memory": {
             "enabled": True,
-            "store_exists": memory_db.exists(),
+            "store_exists": memory_exists,
+            "status": "ready" if memory_exists else "degraded",
         },
         "cache": {
+            "status": "ready",
             "embedding": "memory_lru",
             "llm": "memory_ttl",
             "amap": "sqlite",
