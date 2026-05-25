@@ -145,6 +145,105 @@ def test_pool_applies_origin_radius_and_outputs_distance_meters():
     assert pool.meta.data_warning == "FAISS index missing; using SQLite/seed fallback."
 
 
+def test_pool_uses_profile_origin_when_top_level_origin_is_omitted():
+    from app.schemas.onboarding import DestinationProfile, UserNeedProfile
+    from app.schemas.pool import PoolRequest
+    from app.services.pool_service import PoolService
+
+    near = _poi("near_scenic", lat=31.7994, lng=117.2906)
+    far = _poi("far_scenic", lat=32.9, lng=118.5)
+    profile = UserNeedProfile(
+        destination=DestinationProfile(
+            city="hefei",
+            start_latitude=31.7994,
+            start_longitude=117.2906,
+            radius_meters=3_000,
+        )
+    )
+    service = PoolService(
+        repo=PoolRepo([near, far]),
+        retrieval_service=StaticRetrievalService(["near_scenic", "far_scenic"]),
+        semantic_retrieval=EmptySemanticRetrieval(),
+    )
+
+    pool = service.generate_pool(PoolRequest(user_id="u1", city="hefei", need_profile=profile))
+
+    pooled = [poi for category in pool.categories for poi in category.pois]
+    assert [poi.id for poi in pooled] == ["near_scenic"]
+    assert pooled[0].distance_meters == 0
+
+
+def test_need_profile_round_trips_origin_through_plan_context():
+    from app.schemas.onboarding import UserNeedProfile
+    from app.schemas.plan import PlanContext
+    from app.schemas.pool import TimeWindow
+
+    context = PlanContext(
+        city="hefei",
+        date="2026-05-25",
+        time_window=TimeWindow(start="14:00", end="20:00"),
+        origin_latitude=31.8682,
+        origin_longitude=117.2952,
+        radius_meters=6_000,
+    )
+
+    profile = UserNeedProfile.from_plan_context(context, raw_query="少排队")
+    round_tripped = profile.to_plan_context()
+
+    assert profile.destination.start_latitude == 31.8682
+    assert profile.destination.start_longitude == 117.2952
+    assert profile.destination.radius_meters == 6_000
+    assert round_tripped.origin_latitude == 31.8682
+    assert round_tripped.origin_longitude == 117.2952
+    assert round_tripped.radius_meters == 6_000
+
+
+def test_hefei_pool_request_gets_default_demo_origin_when_absent():
+    from app.schemas.pool import PoolRequest
+    from app.services.location_context import origin_from_request, radius_from_request
+
+    request = PoolRequest(user_id="u1", city="hefei")
+
+    assert origin_from_request(request) == (31.8206, 117.2272)
+    assert radius_from_request(request) is None
+
+
+def test_pool_score_does_not_apply_distance_penalty_twice():
+    from app.schemas.pool import PoolRequest
+    from app.services.location_context import plan_context_from_pool_request
+    from app.services.pool_service import PoolService
+
+    near = _poi("near_scenic", lat=31.8206, lng=117.2272)
+    far = _poi("far_scenic", lat=32.9, lng=118.5)
+    request = PoolRequest(user_id="u1", city="hefei", origin_latitude=31.8206, origin_longitude=117.2272)
+    service = PoolService(
+        repo=PoolRepo([near, far]),
+        retrieval_service=StaticRetrievalService(["far_scenic"]),
+        semantic_retrieval=EmptySemanticRetrieval(),
+    )
+    service.vector_repo.score = lambda *args, **kwargs: 0.0
+
+    context = plan_context_from_pool_request(request, "hefei")
+    near_score = service._score_poi(
+        near,
+        persona_tags=[],
+        free_text=None,
+        budget_per_person=None,
+        request=request,
+        context=context,
+    )
+    far_score = service._score_poi(
+        far,
+        persona_tags=[],
+        free_text=None,
+        budget_per_person=None,
+        request=request,
+        context=context,
+    )
+
+    assert near_score - far_score == pytest.approx(0.18)
+
+
 def test_estimate_transport_uses_amap_when_available(monkeypatch):
     from app.services.amap.schemas import AmapRouteMode, AmapRouteResult
     from app.solver import distance as distance_module
@@ -215,6 +314,42 @@ def test_agent_run_request_origin_is_carried_into_initial_context():
     assert state.context.origin_latitude == 31.8206
     assert state.context.origin_longitude == 117.2272
     assert state.context.radius_meters == 8000
+    assert state.profile.destination.start_latitude == 31.8206
+    assert state.profile.destination.start_longitude == 117.2272
+    assert state.profile.destination.radius_meters == 8000
+
+
+def test_agent_run_request_uses_profile_origin_when_top_level_origin_is_missing():
+    from app.api.routes_agent import AgentRunRequest, build_initial_state
+    from app.schemas.onboarding import DestinationProfile, UserNeedProfile
+    from app.schemas.pool import TimeWindow
+
+    profile = UserNeedProfile(
+        destination=DestinationProfile(
+            city="hefei",
+            start_latitude=31.7994,
+            start_longitude=117.2906,
+            radius_meters=5_000,
+        )
+    )
+
+    state = build_initial_state(
+        AgentRunRequest(
+            user_id="u1",
+            free_text="少排队拍照",
+            city="hefei",
+            date="2026-05-25",
+            time_window=TimeWindow(start="14:00", end="20:00"),
+            need_profile=profile,
+        )
+    )
+
+    assert state.context.origin_latitude == 31.7994
+    assert state.context.origin_longitude == 117.2906
+    assert state.context.radius_meters == 5_000
+    assert state.profile.destination.start_latitude == 31.7994
+    assert state.profile.destination.start_longitude == 117.2906
+    assert state.profile.destination.radius_meters == 5_000
 
 
 def test_build_faiss_rag_can_require_real_sqlite_data(tmp_path):
@@ -266,13 +401,18 @@ def test_real_hefei_faiss_smoke_when_configured(tmp_path):
 
     from app.repositories.faiss_index import FaissVectorIndex
     from app.repositories.faiss_meta import FaissMetaStore
-    from app.repositories.rag_build import documents_for_pois, write_faiss_index
-    from app.repositories.sqlite_poi_repo import load_sqlite_pois
+    from scripts.build_faiss_rag import build_faiss_rag
 
-    pois = load_sqlite_pois(db_path, city="hefei", limit=160)
-    documents = documents_for_pois(pois)
-    stats = write_faiss_index(documents, tmp_path, embedder=FakeEmbedder())
-    rows = FaissVectorIndex(tmp_path, embedder=FakeEmbedder()).query(
+    index_dir = tmp_path / "faiss"
+    stats = build_faiss_rag(
+        city="hefei",
+        index_dir=index_dir,
+        sqlite_path=db_path,
+        require_real_data=True,
+        limit=160,
+        embedder=FakeEmbedder(),
+    )
+    rows = FaissVectorIndex(index_dir, embedder=FakeEmbedder()).query(
         text="少排队 拍照 带老人",
         city="hefei",
         top_k=5,
@@ -280,10 +420,12 @@ def test_real_hefei_faiss_smoke_when_configured(tmp_path):
     )
     source_types = {
         row["source_type"]
-        for row in FaissMetaStore(tmp_path / "meta.jsonl").read()
+        for row in FaissMetaStore(index_dir / "meta.jsonl").read()
     }
 
-    assert stats["documents"] == len(documents)
+    assert stats["pois"] > 0
+    assert stats["real_sqlite_rows"] > 0
+    assert stats["documents"] > stats["pois"]
     assert {"poi_profile", "ugc_review"} <= source_types
     assert rows
     assert rows[0]["text"]

@@ -95,7 +95,7 @@ VITE_AMAP_SECURITY_JS_CODE=your_amap_security_js_code
 VITE_API_BASE_URL=http://127.0.0.1:8000/api
 ```
 
-The discovery page now sends `origin_latitude`, `origin_longitude`, and `radius_meters` in pool and agent requests. The backend returns `distance_meters`, retrieval provenance, and evidence snippets for route cards.
+The discovery page now sends `origin_latitude`, `origin_longitude`, and `radius_meters` in pool and agent requests, and stores the same origin on `need_profile.destination`. If a Hefei request omits an explicit origin, the backend falls back to the demo Hefei center origin. The backend returns `distance_meters`, retrieval provenance, and evidence snippets for route cards.
 
 ## Observability
 

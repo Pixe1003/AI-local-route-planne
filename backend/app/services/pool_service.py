@@ -12,8 +12,10 @@ from app.schemas.rag import RetrievalQuery, RetrievedPoi
 from app.services.agent_skill_registry import get_agent_skill_registry
 from app.services.location_context import (
     distance_from_origin,
+    origin_from_context,
     origin_from_request,
     plan_context_from_pool_request,
+    radius_from_request,
     within_radius,
 )
 from app.services.poi_retrieval_service import PoiRetrievalService
@@ -103,6 +105,7 @@ class PoolService:
                 candidates = filtered
         candidates = self._filter_by_radius(candidates, request)
         ugc_by_poi = self._ugc_hits_by_poi(request.ugc_hits)
+        scoring_context = plan_context_from_pool_request(request, city)
         scored = sorted(
             (
                 (
@@ -112,6 +115,7 @@ class PoolService:
                         free_text,
                         budget,
                         request=request,
+                        context=scoring_context,
                         ugc_by_poi=ugc_by_poi,
                     ),
                     poi,
@@ -125,7 +129,6 @@ class PoolService:
         self.last_retrieval_stats["pool_selected"] = len(selected)
         grouped: dict[str, list[PoiInPool]] = {}
         origin = origin_from_request(request)
-        scoring_context = plan_context_from_pool_request(request, city)
         for score, poi in selected:
             retrieved_item = retrieved_by_id.get(poi.id)
             evidence = retrieved_item.evidence_snippets if retrieved_item else []
@@ -198,6 +201,7 @@ class PoolService:
         free_text: str | None,
         budget_per_person: int | None,
         request: PoolRequest | None = None,
+        context=None,
         ugc_by_poi: dict[str, list[dict[str, Any]]] | None = None,
     ) -> float:
         rating_score = poi.rating / 5 * 0.22
@@ -207,7 +211,7 @@ class PoolService:
         profile_score = self._cheap_profile_score(poi, request, free_text) * 0.24
         history_score = self._cheap_history_score(poi, request) * 0.20
         ugc_bonus = 0.10 if ugc_by_poi and poi.id in ugc_by_poi else 0.0
-        distance_penalty = self._cheap_distance_penalty(poi, request)
+        distance_penalty = self._distance_penalty_score(poi, context)
         budget_penalty = 0.0
         if budget_per_person and poi.price_per_person and poi.price_per_person > budget_per_person:
             budget_penalty = min((poi.price_per_person - budget_per_person) / max(budget_per_person, 1), 2) * 0.18
@@ -265,6 +269,7 @@ class PoolService:
             terms.extend(profile.activity_preferences)
             terms.extend(profile.food_preferences)
             terms.extend(profile.route_style)
+        origin = origin_from_request(request)
         base = dict(
             city=city,
             text=free_text,
@@ -272,9 +277,9 @@ class PoolService:
             budget_per_person=budget,
             avoid_queue="少排队" in (free_text or ""),
             preference_terms=list(dict.fromkeys(terms)),
-            origin_latitude=getattr(request, "origin_latitude", None),
-            origin_longitude=getattr(request, "origin_longitude", None),
-            radius_meters=getattr(request, "radius_meters", None),
+            origin_latitude=origin[0] if origin else None,
+            origin_longitude=origin[1] if origin else None,
+            radius_meters=radius_from_request(request),
         )
         profile_results = self.semantic_retrieval.retrieve(
             RetrievalQuery(**base, source_types=["poi_profile"])
@@ -339,6 +344,12 @@ class PoolService:
             score += 0.12
         return min(score, 1.0)
 
+    def _distance_penalty_score(self, poi, context) -> float:
+        distance = distance_from_origin(poi, origin_from_context(context))
+        if distance is None or distance <= 1500:
+            return 0.0
+        return min((distance - 1500) / 1000 * 0.02, 0.18)
+
     def _cheap_history_score(self, poi, request: PoolRequest | None) -> float:
         if request is None:
             return 0.0
@@ -359,14 +370,6 @@ class PoolService:
             if poi.category in facts.avoid_categories:
                 score -= 0.35
         return max(-1.0, min(score, 1.0))
-
-    def _cheap_distance_penalty(self, poi, request: PoolRequest | None) -> float:
-        if request is None:
-            return 0.0
-        distance = distance_from_origin(poi, origin_from_request(request))
-        if distance is None or distance <= 1500:
-            return 0.0
-        return min((distance - 1500) / 1000 * 0.02, 0.18)
 
     def _default_selected_ids(self, categories: list[PoolCategory], request: PoolRequest) -> list[str]:
         all_pois = [poi for category in categories for poi in category.pois]
@@ -462,12 +465,13 @@ class PoolService:
         return None
 
     def _filter_by_radius(self, candidates: list[PoiDetail], request: PoolRequest) -> list[PoiDetail]:
-        if request.radius_meters is None:
+        radius_meters = radius_from_request(request)
+        if radius_meters is None:
             return candidates
         origin = origin_from_request(request)
         if origin is None:
             return candidates
-        return [poi for poi in candidates if within_radius(poi, origin, request.radius_meters)]
+        return [poi for poi in candidates if within_radius(poi, origin, radius_meters)]
 
     def _supplement_category_coverage(self, candidates: list[PoiDetail], city: str) -> list[PoiDetail]:
         present = {getattr(poi, "category", None) for poi in candidates}

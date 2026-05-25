@@ -145,7 +145,14 @@ describe("DiscoveryFeedPage Amap route flow", () => {
           free_text: expect.stringContaining("少排队"),
           origin_latitude: 31.8206,
           origin_longitude: 117.2272,
-          radius_meters: 8000
+          radius_meters: 8000,
+          need_profile: expect.objectContaining({
+            destination: expect.objectContaining({
+              start_latitude: 31.8206,
+              start_longitude: 117.2272,
+              radius_meters: 8000
+            })
+          })
         })
       )
     })

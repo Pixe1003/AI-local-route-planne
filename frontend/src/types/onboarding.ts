@@ -1,6 +1,9 @@
 export interface DestinationProfile {
   city: string
   start_location?: string | null
+  start_latitude?: number | null
+  start_longitude?: number | null
+  radius_meters?: number | null
   target_area?: string | null
   end_location?: string | null
 }

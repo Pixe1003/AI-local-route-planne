@@ -35,6 +35,7 @@ class AgentRunRequest(BaseModel):
     time_window: TimeWindow | None = None
     date: str
     budget_per_person: int | None = None
+    need_profile: UserNeedProfile | None = None
     origin_latitude: float | None = None
     origin_longitude: float | None = None
     radius_meters: int | None = None
@@ -142,18 +143,40 @@ async def stream_trace(session_id: str) -> StreamingResponse:
 def build_initial_state(request: AgentRunRequest) -> AgentState:
     session_id = request.session_id or uuid4().hex
     time_window = request.time_window or TimeWindow(start="13:00", end="21:00")
+    profile_context = request.need_profile.to_plan_context() if request.need_profile else None
     context = PlanContext(
-        city=request.city,
+        city=request.city or (profile_context.city if profile_context else "hefei"),
         date=request.date,
         time_window=time_window,
-        party="friends",
-        budget_per_person=request.budget_per_person,
-        origin_latitude=request.origin_latitude,
-        origin_longitude=request.origin_longitude,
-        radius_meters=request.radius_meters,
+        party=(profile_context.party if profile_context else None) or "friends",
+        budget_per_person=(
+            request.budget_per_person
+            if request.budget_per_person is not None
+            else (profile_context.budget_per_person if profile_context else None)
+        ),
+        origin_latitude=(
+            request.origin_latitude
+            if request.origin_latitude is not None
+            else (profile_context.origin_latitude if profile_context else None)
+        ),
+        origin_longitude=(
+            request.origin_longitude
+            if request.origin_longitude is not None
+            else (profile_context.origin_longitude if profile_context else None)
+        ),
+        radius_meters=(
+            request.radius_meters
+            if request.radius_meters is not None
+            else (profile_context.radius_meters if profile_context else None)
+        ),
     )
-    profile = UserNeedProfile.from_plan_context(context, raw_query=request.free_text)
+    profile = request.need_profile or UserNeedProfile.from_plan_context(context, raw_query=request.free_text)
     profile.user_id = request.user_id
+    profile.raw_query = profile.raw_query or request.free_text
+    profile.destination.city = context.city
+    profile.destination.start_latitude = context.origin_latitude
+    profile.destination.start_longitude = context.origin_longitude
+    profile.destination.radius_meters = context.radius_meters
     state = AgentState(
         goal=AgentGoal(
             kind="plan_route",

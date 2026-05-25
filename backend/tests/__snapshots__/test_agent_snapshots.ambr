@@ -25,7 +25,7 @@
             dict({
               'category': 'str',
               'cover_image': 'NoneType',
-              'distance_meters': 'NoneType',
+              'distance_meters': 'int',
               'estimated_queue_min': 'int',
               'evidence_snippets': list([
               ]),

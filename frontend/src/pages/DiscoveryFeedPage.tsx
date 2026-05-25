@@ -81,6 +81,9 @@ export function DiscoveryFeedPage() {
     destination: {
       city: "hefei",
       start_location: "合肥市中心",
+      start_latitude: origin.latitude,
+      start_longitude: origin.longitude,
+      radius_meters: radiusMeters,
       target_area: "合肥核心城区",
       end_location: null
     },
@@ -133,6 +136,7 @@ export function DiscoveryFeedPage() {
         date,
         time_window: { start, end },
         budget_per_person: budget,
+        need_profile: profile,
         preference_snapshot: snapshot,
         ...originPayload
       })
