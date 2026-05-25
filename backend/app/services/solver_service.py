@@ -52,12 +52,7 @@ class SolverService:
     ) -> list[str]:
         ids = list(dict.fromkeys(candidate_poi_ids))
         city_pois = self.repo.list_by_city(city, limit=500)
-        city_poi_by_id = {poi.id: poi for poi in city_pois}
-        categories = {
-            city_poi_by_id[poi_id].category
-            for poi_id in ids
-            if poi_id in city_poi_by_id
-        }
+        categories = {self.repo.get(poi_id).category for poi_id in ids if poi_id in {poi.id for poi in city_pois}}
         if intent.hard_constraints.must_include_meal and "restaurant" not in categories:
             self._append_first_category(ids, city_pois, RESTAURANT_CATEGORIES)
         if intent.hard_constraints.must_include_experience and not categories & EXPERIENCE_CATEGORIES:
