@@ -22,6 +22,9 @@ class Settings(BaseSettings):
     llm_timeout_seconds: int = 30
     database_url: str = "postgresql://local_route:local_route@localhost:5432/local_route"
     vector_db_path: str = "./data/chroma"
+    rag_enabled: bool = True
+    faiss_index_path: str = "./data/faiss"
+    embedding_model: str = "BAAI/bge-small-zh-v1.5"
     ugc_reviews_path: str = "./data/processed/ugc_hefei.jsonl"
     amap_key: str = ""
     amap_web_service_key: str = ""

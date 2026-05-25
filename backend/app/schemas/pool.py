@@ -5,6 +5,7 @@ from pydantic import BaseModel, Field, field_validator
 
 from app.schemas.onboarding import UserNeedProfile
 from app.schemas.preferences import PreferenceSnapshot
+from app.schemas.rag import EvidenceSnippet
 from app.schemas.user_memory import UserFacts
 
 
@@ -38,6 +39,9 @@ class PoolRequest(BaseModel):
     preference_snapshot: Optional[PreferenceSnapshot] = None
     user_facts: Optional[UserFacts] = None
     ugc_hits: list[dict[str, Any]] = Field(default_factory=list)
+    origin_latitude: Optional[float] = None
+    origin_longitude: Optional[float] = None
+    radius_meters: Optional[int] = None
 
 
 class PoiInPool(BaseModel):
@@ -54,6 +58,9 @@ class PoiInPool(BaseModel):
     estimated_queue_min: Optional[int]
     suitable_score: float
     score_breakdown: dict[str, float] = Field(default_factory=dict)
+    retrieval_score: Optional[float] = None
+    retrieval_provenance: list[str] = Field(default_factory=list)
+    evidence_snippets: list[EvidenceSnippet] = Field(default_factory=list)
 
 
 class PoolCategory(BaseModel):
@@ -66,6 +73,7 @@ class PoolMeta(BaseModel):
     total_count: int
     generated_at: datetime
     user_persona_summary: str
+    data_warning: Optional[str] = None
 
 
 class PoolResponse(BaseModel):

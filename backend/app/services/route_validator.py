@@ -1,6 +1,7 @@
 from datetime import date as date_type
 
 from app.repositories.poi_repo import get_poi_repository
+from app.repositories.poi_repo import PoiRepository
 from app.schemas.onboarding import UserNeedProfile
 from app.schemas.plan import (
     PlanContext,
@@ -9,14 +10,13 @@ from app.schemas.plan import (
     ValidationIssue,
     ValidationResult,
 )
+from app.services.category_policy import EXPERIENCE_CATEGORIES
 from app.utils.time_utils import minutes_between
 
 
 class RouteValidator:
-    EXPERIENCE_CATEGORIES = {"culture", "scenic", "entertainment", "nightlife"}
-
-    def __init__(self) -> None:
-        self.repo = get_poi_repository()
+    def __init__(self, repo: PoiRepository | None = None) -> None:
+        self.repo = repo or get_poi_repository()
 
     def validate(
         self,
@@ -34,9 +34,13 @@ class RouteValidator:
 
         if len(route.stops) < 3:
             issues.append(ValidationIssue(code="too_few_pois", message="路线至少需要串联 3 个 POI。"))
-        if "restaurant" not in route_categories:
+        if intent.hard_constraints.must_include_meal and "restaurant" not in route_categories:
             issues.append(ValidationIssue(code="meal_missing", message="路线需要包含至少 1 个餐饮点。"))
-        if self._has_experience_options(context) and not route_categories & self.EXPERIENCE_CATEGORIES:
+        if (
+            intent.hard_constraints.must_include_experience
+            and self._has_experience_options(context)
+            and not route_categories & EXPERIENCE_CATEGORIES
+        ):
             issues.append(
                 ValidationIssue(
                     code="experience_missing",
@@ -44,6 +48,7 @@ class RouteValidator:
                 )
             )
 
+        opening_issue_poi_ids: set[str] = set()
         for stop in route.stops:
             poi = poi_by_id.get(stop.poi_id)
             if poi is None:
@@ -56,6 +61,9 @@ class RouteValidator:
                 )
                 continue
             if context and not self._is_open(poi, context.date, stop.arrival_time):
+                if poi.id in opening_issue_poi_ids:
+                    continue
+                opening_issue_poi_ids.add(poi.id)
                 issues.append(
                     ValidationIssue(
                         code="poi_closed",
@@ -114,17 +122,21 @@ class RouteValidator:
         )
 
     def _is_open(self, poi, date: str, arrival_time: str) -> bool:
+        if not poi.open_hours:
+            return True
         try:
             weekday = date_type.fromisoformat(date).strftime("%A").lower()
         except ValueError:
             weekday = "saturday"
         windows = poi.open_hours.get(weekday, []) if poi.open_hours else []
+        if not windows:
+            return True
         return any(window["open"] <= arrival_time <= window["close"] for window in windows)
 
     def _has_experience_options(self, context: PlanContext | None) -> bool:
         if context is None:
             return True
         return any(
-            poi.category in self.EXPERIENCE_CATEGORIES
+            poi.category in EXPERIENCE_CATEGORIES
             for poi in self.repo.list_by_city(context.city)
         )

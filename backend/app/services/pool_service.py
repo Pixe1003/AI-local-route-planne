@@ -3,12 +3,15 @@ from typing import Any
 from uuid import uuid4
 
 from app.repositories.poi_repo import get_poi_repository
+from app.repositories.poi_repo import PoiRepository
 from app.repositories.vector_repo import VectorRepository
 from app.schemas.poi import PoiDetail
 from app.schemas.pool import PoiInPool, PoolCategory, PoolMeta, PoolRequest, PoolResponse
+from app.schemas.rag import RetrievalQuery, RetrievedPoi
 from app.services.agent_skill_registry import get_agent_skill_registry
 from app.services.poi_retrieval_service import PoiRetrievalService
 from app.services.poi_scoring_service import PoiScoringService
+from app.services.retrieval_service import RetrievalService
 from app.services.state import POOL_REGISTRY
 from app.solver.distance import haversine_meters
 
@@ -40,13 +43,19 @@ class PoolService:
     EXPERIENCE_CATEGORIES = {"culture", "scenic", "entertainment", "nightlife", "outdoor"}
     SHOPPING_CATEGORIES = {"shopping"}
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        repo: PoiRepository | None = None,
+        retrieval_service: PoiRetrievalService | None = None,
+        semantic_retrieval: RetrievalService | None = None,
+    ) -> None:
         self.agent_skill = get_agent_skill_registry().get_skill("recommend")
-        self.repo = get_poi_repository()
+        self.repo = repo or get_poi_repository()
         self.vector_repo = VectorRepository()
         self.poi_scorer = PoiScoringService()
         self.ugc_repo = self.poi_scorer.ugc_repo
-        self.retrieval_service = PoiRetrievalService(repo=self.repo)
+        self.retrieval_service = retrieval_service or PoiRetrievalService(repo=self.repo)
+        self.semantic_retrieval = semantic_retrieval or RetrievalService(repo=self.repo)
         self.last_retrieval_stats: dict[str, int] = {}
 
     def generate_pool(self, request: PoolRequest) -> PoolResponse:
@@ -59,10 +68,14 @@ class PoolService:
             else request.budget_per_person
         )
         city = profile.destination.city if profile else request.city
+        semantic_results = self._semantic_candidates(request, city, persona_tags, free_text, budget)
+        retrieved_by_id = {item.poi_id: item for item in semantic_results}
         retrieval = self.retrieval_service.retrieve_with_stats(request, limit=300)
-        candidates = self.repo.get_many(retrieval.poi_ids)
+        candidate_ids = [*retrieved_by_id, *retrieval.poi_ids]
+        candidates = self.repo.get_many(list(dict.fromkeys(candidate_ids)))
         self.last_retrieval_stats = {
             **retrieval.stats,
+            "semantic_candidates": len(semantic_results),
             "rerank_candidates": len(candidates),
         }
         if not candidates:
@@ -104,6 +117,8 @@ class PoolService:
         self.last_retrieval_stats["pool_selected"] = len(selected)
         grouped: dict[str, list[PoiInPool]] = {}
         for score, poi in selected:
+            retrieved_item = retrieved_by_id.get(poi.id)
+            evidence = retrieved_item.evidence_snippets if retrieved_item else []
             breakdown = self.poi_scorer.score_poi(
                 poi,
                 profile=profile,
@@ -120,12 +135,25 @@ class PoolService:
                     price_per_person=poi.price_per_person,
                     cover_image=poi.cover_image,
                     distance_meters=None,
-                    why_recommend=self._why_recommend(poi.name, poi.tags, free_text, breakdown.history_preference),
-                    highlight_quote=self._highlight_quote(poi, free_text, request.ugc_hits),
+                    why_recommend=self._why_recommend(
+                        poi.name,
+                        poi.tags,
+                        free_text,
+                        breakdown.history_preference,
+                        retrieved_item,
+                    ),
+                    highlight_quote=(
+                        evidence[0].text
+                        if evidence
+                        else self._highlight_quote(poi, free_text, request.ugc_hits)
+                    ),
                     keywords=[item["keyword"] for item in poi.high_freq_keywords[:5]],
                     estimated_queue_min=poi.queue_estimate["weekend_peak"],
                     suitable_score=round(score, 3),
                     score_breakdown=breakdown.model_dump(),
+                    retrieval_score=retrieved_item.score if retrieved_item else None,
+                    retrieval_provenance=retrieved_item.provenance if retrieved_item else [],
+                    evidence_snippets=evidence,
                 )
             )
         categories = [
@@ -191,7 +219,12 @@ class PoolService:
         tags: list[str],
         free_text: str | None,
         history_preference: float,
+        retrieved_item: RetrievedPoi | None = None,
     ) -> str:
+        if retrieved_item and retrieved_item.evidence_snippets:
+            if any(item.source_type == "ugc_review" for item in retrieved_item.evidence_snippets):
+                return f"{name}由本次 UGC 语义检索召回，证据和你的细粒度需求更贴近。"
+            return f"{name}由本次语义检索召回，证据来自真实 POI 资料和高频关键词。"
         if history_preference >= 10:
             return f"{name}和你刚收藏的内容高度相似，适合作为本次即时路线的优先候选。"
         if free_text and "排队" in free_text and "低排队" in tags:
@@ -199,6 +232,60 @@ class PoolService:
         if "photogenic" in tags or "拍照" in tags:
             return f"{name}适合拍照打卡，也方便和周边点位串联。"
         return f"{name}和本次需求匹配度较高，适合作为路线候选。"
+
+    def _semantic_candidates(
+        self,
+        request: PoolRequest,
+        city: str,
+        persona_tags: list[str],
+        free_text: str | None,
+        budget: int | None,
+    ) -> list[RetrievedPoi]:
+        terms = list(persona_tags)
+        if request.preference_snapshot:
+            terms.extend(list(request.preference_snapshot.category_weights)[:6])
+            terms.extend(list(request.preference_snapshot.tag_weights)[:8])
+            terms.extend(list(request.preference_snapshot.keyword_weights)[:8])
+        profile = request.need_profile
+        if profile:
+            terms.extend(profile.activity_preferences)
+            terms.extend(profile.food_preferences)
+            terms.extend(profile.route_style)
+        base = dict(
+            city=city,
+            text=free_text,
+            top_k=80,
+            budget_per_person=budget,
+            avoid_queue="少排队" in (free_text or ""),
+            preference_terms=list(dict.fromkeys(terms)),
+            origin_latitude=getattr(request, "origin_latitude", None),
+            origin_longitude=getattr(request, "origin_longitude", None),
+            radius_meters=getattr(request, "radius_meters", None),
+        )
+        profile_results = self.semantic_retrieval.retrieve(
+            RetrievalQuery(**base, source_types=["poi_profile"])
+        )
+        ugc_results = self.semantic_retrieval.retrieve(
+            RetrievalQuery(**base, source_types=["ugc_review"])
+        )
+        return self._merge_retrieved([profile_results, ugc_results])[:80]
+
+    def _merge_retrieved(self, groups: list[list[RetrievedPoi]]) -> list[RetrievedPoi]:
+        merged: dict[str, RetrievedPoi] = {}
+        for group in groups:
+            for item in group:
+                existing = merged.get(item.poi_id)
+                if existing is None:
+                    merged[item.poi_id] = item.model_copy(deep=True)
+                    continue
+                existing.score = max(existing.score, item.score)
+                existing.evidence_snippets = sorted(
+                    [*existing.evidence_snippets, *item.evidence_snippets],
+                    key=lambda snippet: snippet.score,
+                    reverse=True,
+                )[:4]
+                existing.provenance = list(dict.fromkeys([*existing.provenance, *item.provenance]))
+        return sorted(merged.values(), key=lambda item: item.score, reverse=True)
 
     def _highlight_quote(self, poi, free_text: str | None, ugc_hits: list[dict[str, Any]] | None = None) -> str | None:
         for hit in ugc_hits or []:

@@ -3,6 +3,7 @@ from app.schemas.plan import PlanContext, ScoreBreakdown, StructuredIntent
 from app.schemas.preferences import PreferenceSnapshot
 from app.schemas.user_memory import UserFacts
 from app.repositories.ugc_vector_repo import UgcVectorRepo, get_ugc_vector_repo
+from app.services.location_context import distance_from_origin, origin_from_context
 
 
 class PoiScoringService:
@@ -38,7 +39,7 @@ class PoiScoringService:
         fact_alignment = self._fact_alignment_score(poi, user_facts)
         queue_penalty = self._queue_penalty(poi, intent, text)
         price_penalty = self._price_penalty(poi, intent, profile)
-        distance_penalty = 0.0
+        distance_penalty = self._distance_penalty(poi, context)
         risk_penalty = -4.0 if poi.queue_estimate["weekend_peak"] > 45 else 0.0
         total = (
             user_interest
@@ -166,3 +167,12 @@ class PoiScoringService:
         if budget and poi.price_per_person and poi.price_per_person > budget:
             return -14.0
         return 0.0
+
+    def _distance_penalty(self, poi, context: PlanContext | None) -> float:
+        origin = origin_from_context(context)
+        if origin is None:
+            return 0.0
+        distance = distance_from_origin(poi, origin)
+        if distance is None or distance <= 1500:
+            return 0.0
+        return -min((distance - 1500) / 1000 * 1.8, 18.0)
