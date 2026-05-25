@@ -362,3 +362,47 @@ def test_route_validator_allows_non_food_route_when_meal_not_required():
     result = RouteValidator(repo=Repo([scenic])).validate(route, intent)
 
     assert result.is_valid is True
+
+
+def test_route_validator_dedupes_repeated_poi_opening_issues():
+    from app.schemas.plan import HardConstraints, PlanContext, RouteMetrics, RouteSkeleton, RouteStop, SoftPreferences, StructuredIntent
+    from app.schemas.pool import TimeWindow
+    from app.services.route_validator import RouteValidator
+
+    scenic = _poi("hf_scenic", "scenic")
+    route = RouteSkeleton(
+        style="relaxed",
+        stops=[
+            RouteStop(poi_id="hf_scenic", arrival_time="08:00", departure_time="08:40", duration_min=40),
+            RouteStop(poi_id="hf_scenic", arrival_time="08:50", departure_time="09:30", duration_min=40),
+            RouteStop(poi_id="hf_scenic", arrival_time="09:40", departure_time="10:20", duration_min=40),
+        ],
+        dropped_poi_ids=[],
+        drop_reasons={},
+        metrics=RouteMetrics(
+            total_duration_min=140,
+            total_cost=0,
+            poi_count=3,
+            walking_distance_meters=0,
+            queue_total_min=0,
+        ),
+    )
+    intent = StructuredIntent(
+        hard_constraints=HardConstraints(
+            start_time="08:00",
+            end_time="12:00",
+            must_include_meal=False,
+            must_include_experience=False,
+        ),
+        soft_preferences=SoftPreferences(),
+        must_visit_pois=[],
+    )
+    context = PlanContext(
+        city="hefei",
+        date="2026-05-25",
+        time_window=TimeWindow(start="08:00", end="12:00"),
+    )
+
+    result = RouteValidator(repo=Repo([scenic])).validate(route, intent, context=context)
+
+    assert [issue.code for issue in result.issues].count("poi_closed") == 1

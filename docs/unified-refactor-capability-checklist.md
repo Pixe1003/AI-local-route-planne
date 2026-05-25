@@ -38,7 +38,7 @@ This document records the Phase 0 file-level inventory for the unified refactor 
 | Existing SQLite FTS/bucket recall | Preserved in `backend/app/services/poi_retrieval_service.py` |
 | Pool fusion | `backend/app/services/pool_service.py` merges semantic FAISS results with SQLite FTS/bucket results |
 | Fallback when DB/index missing | Hefei seed fallback in `backend/app/repositories/seed_data.py`; FAISS/embedding errors return empty semantic results |
-| Memory/cache/observability/Amap | Preserved from `origin/main` files listed above |
+| Memory/cache/observability/Amap | Existing modules are preserved from `origin/main`; deeper unified integration is tracked as remaining work below |
 
 ## Functional Checklist
 
@@ -51,6 +51,18 @@ This document records the Phase 0 file-level inventory for the unified refactor 
 - [x] Pool candidates expose retrieval provenance and evidence snippets.
 - [x] Existing SQLite FTS/bucket recall tests still pass.
 - [x] Agent memory, cache, observability, Amap modules remain present from `origin/main`.
-- [ ] Full backend suite passes after final integration.
-- [ ] Frontend tests/build pass after final integration.
+- [x] Full backend suite passes after final integration.
+- [x] Frontend tests/build pass after final integration.
 - [ ] Real local FAISS smoke test is run when embedding model/data files are available.
+
+## Known Remaining Work
+
+These items are not complete in this branch and should not be treated as delivered by the unified refactor PR:
+
+- [ ] Amap routing is not used by the solver or candidate scoring path; `solver/distance.py` still uses haversine fallback for route ordering and metrics.
+- [ ] The solver remains greedy; P2-1 optimization work is still pending.
+- [ ] Partial replan has no locked "completed stops" concept yet; P2-3 is still pending.
+- [ ] Agent memory is preserved from `origin/main`, but it has not been newly unified with the FAISS retrieval contract in this branch.
+- [ ] Observability modules and `/health` status exist, but full tracing/metrics coverage for the unified retrieval flow is not complete.
+- [ ] Embedding cache exists; retrieval-result cache for repeated semantic queries is not implemented.
+- [ ] Quality gates and prompt regression tests exist in the tree, but no new CI gate wiring was added here.

@@ -48,6 +48,7 @@ class RouteValidator:
                 )
             )
 
+        opening_issue_poi_ids: set[str] = set()
         for stop in route.stops:
             poi = poi_by_id.get(stop.poi_id)
             if poi is None:
@@ -60,6 +61,9 @@ class RouteValidator:
                 )
                 continue
             if context and not self._is_open(poi, context.date, stop.arrival_time):
+                if poi.id in opening_issue_poi_ids:
+                    continue
+                opening_issue_poi_ids.add(poi.id)
                 issues.append(
                     ValidationIssue(
                         code="poi_closed",
