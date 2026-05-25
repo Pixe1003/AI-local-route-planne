@@ -47,6 +47,7 @@ class SolverService:
         self, candidate_poi_ids: list[str], city: str, intent: StructuredIntent
     ) -> list[str]:
         ids = list(dict.fromkeys(candidate_poi_ids))
+        id_set = set(ids)
         city_pois = self.repo.list_by_city(city, limit=500) or self.repo.list_by_city("hefei", limit=500)
         city_poi_by_id = {poi.id: poi for poi in city_pois}
         categories = {
@@ -55,26 +56,28 @@ class SolverService:
             if poi_id in city_poi_by_id
         }
         if intent.hard_constraints.must_include_meal and "restaurant" not in categories:
-            self._append_first_category(ids, city_pois, RESTAURANT_CATEGORIES)
+            self._append_first_category(ids, id_set, city_pois, RESTAURANT_CATEGORIES)
         if intent.hard_constraints.must_include_experience and not categories & EXPERIENCE_CATEGORIES:
-            self._append_first_category(ids, city_pois, EXPERIENCE_CATEGORIES)
+            self._append_first_category(ids, id_set, city_pois, EXPERIENCE_CATEGORIES)
         if intent.hard_constraints.must_include_meal:
-            self._append_first_category(ids, city_pois, RESTAURANT_CATEGORIES)
+            self._append_first_category(ids, id_set, city_pois, RESTAURANT_CATEGORIES)
         if intent.hard_constraints.must_include_experience:
-            self._append_first_category(ids, city_pois, EXPERIENCE_CATEGORIES)
+            self._append_first_category(ids, id_set, city_pois, EXPERIENCE_CATEGORIES)
         if intent.hard_constraints.must_include_meal or not intent.hard_constraints.must_include_experience:
-            self._append_first_category(ids, city_pois, {"cafe"})
+            self._append_first_category(ids, id_set, city_pois, {"cafe"})
         for poi in city_pois:
-            if poi.id not in ids:
+            if poi.id not in id_set:
                 ids.append(poi.id)
+                id_set.add(poi.id)
             if len(ids) >= 10:
                 break
         return ids
 
-    def _append_first_category(self, ids: list[str], pois, categories: set[str]) -> None:
+    def _append_first_category(self, ids: list[str], id_set: set[str], pois, categories: set[str]) -> None:
         for poi in sorted(pois, key=lambda item: (item.price_per_person or 999, -item.rating)):
-            if poi.category in categories and poi.id not in ids:
+            if poi.category in categories and poi.id not in id_set:
                 ids.append(poi.id)
+                id_set.add(poi.id)
                 return
 
     def _solve_style(
@@ -195,7 +198,8 @@ class SolverService:
             intent.hard_constraints.start_time,
             stops[-1].departure_time if stops else intent.hard_constraints.start_time,
         )
-        dropped = [poi_id for poi_id in candidate_poi_ids if poi_id not in {stop.poi_id for stop in stops}]
+        stop_ids = {stop.poi_id for stop in stops}
+        dropped = [poi_id for poi_id in candidate_poi_ids if poi_id not in stop_ids]
         return RouteSkeleton(
             style=style,
             stops=stops,

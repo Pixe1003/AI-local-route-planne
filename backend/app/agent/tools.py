@@ -177,6 +177,9 @@ def _recommend_pool(state: AgentState, args: dict[str, Any]) -> ToolResult:
         preference_snapshot=state.preference,
         user_facts=state.memory.user_facts,
         ugc_hits=state.memory.ugc_hits,
+        origin_latitude=state.context.origin_latitude,
+        origin_longitude=state.context.origin_longitude,
+        radius_meters=state.context.radius_meters,
     )
     service = PoolService()
     pool = service.generate_pool(request)

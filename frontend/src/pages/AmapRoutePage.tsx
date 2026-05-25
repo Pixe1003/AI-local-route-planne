@@ -64,6 +64,12 @@ export function AmapRoutePage() {
     () => new Map((storyPlan?.stops ?? []).map(stop => [stop.poi_id, stop])),
     [storyPlan]
   )
+  const poolPoiById = useMemo(() => {
+    const entries = (routeRequest?.pool?.categories ?? []).flatMap(category =>
+      category.pois.map(poi => [poi.id, poi] as const)
+    )
+    return new Map(entries)
+  }, [routeRequest?.pool])
   const orderedPois = routeResult?.ordered_pois ?? []
   const totalDistance = routeResult ? formatDistance(routeResult.total_distance_m) : "--"
   const totalDuration = routeResult ? formatDuration(routeResult.total_duration_s) : "--"
@@ -191,6 +197,9 @@ export function AmapRoutePage() {
           </div>
         ) : null}
         {error ? <p className="route-panel-alert error">{error}</p> : null}
+        {routeRequest.pool?.meta.data_warning ? (
+          <p className="route-panel-alert">{routeRequest.pool.meta.data_warning}</p>
+        ) : null}
 
         <AgentThinkingPanel steps={routeRequest.agent_steps ?? []} />
 
@@ -214,24 +223,44 @@ export function AmapRoutePage() {
           <section className="route-poi-section">
             <h2>路线点位</h2>
             <ol className="route-poi-list">
-              {orderedPois.map((poi, index) => (
-                <li key={poi.id}>
-                  <span className="poi-order">{index + 1}</span>
-                  <div>
-                    <strong>{poi.name}</strong>
-                    <small>
-                      <MapPin size={13} />
-                      {poi.category ?? "POI"}
-                    </small>
-                    {storyByPoiId.get(poi.id) ? (
-                      <div className="route-story-evidence">
-                        <p>{storyByPoiId.get(poi.id)?.why}</p>
-                        <blockquote>{storyByPoiId.get(poi.id)?.ugc_quote}</blockquote>
-                      </div>
-                    ) : null}
-                  </div>
-                </li>
-              ))}
+              {orderedPois.map((poi, index) => {
+                const poolPoi = poolPoiById.get(poi.id)
+                const evidence = poolPoi?.evidence_snippets?.[0]
+                return (
+                  <li key={poi.id}>
+                    <span className="poi-order">{index + 1}</span>
+                    <div>
+                      <strong>{poi.name}</strong>
+                      <small>
+                        <MapPin size={13} />
+                        {poi.category ?? poolPoi?.category ?? "POI"}
+                      </small>
+                      {poolPoi?.distance_meters !== undefined && poolPoi.distance_meters !== null ? (
+                        <small>距出发点 {formatDistance(poolPoi.distance_meters)}</small>
+                      ) : null}
+                      {poolPoi?.retrieval_provenance.length ? (
+                        <div className="provenance-row">
+                          {poolPoi.retrieval_provenance.map(item => (
+                            <span key={item}>{item}</span>
+                          ))}
+                        </div>
+                      ) : null}
+                      {evidence ? (
+                        <div className="route-retrieval-evidence">
+                          <span>{evidence.source_type}</span>
+                          <blockquote>{evidence.text}</blockquote>
+                        </div>
+                      ) : null}
+                      {storyByPoiId.get(poi.id) ? (
+                        <div className="route-story-evidence">
+                          <p>{storyByPoiId.get(poi.id)?.why}</p>
+                          <blockquote>{storyByPoiId.get(poi.id)?.ugc_quote}</blockquote>
+                        </div>
+                      ) : null}
+                    </div>
+                  </li>
+                )
+              })}
             </ol>
           </section>
         ) : null}

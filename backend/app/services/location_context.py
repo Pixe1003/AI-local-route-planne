@@ -7,6 +7,9 @@ from app.solver.distance import haversine_coordinate_meters
 
 
 Origin = tuple[float, float]
+DEFAULT_CITY_ORIGINS: dict[str, Origin] = {
+    "hefei": (31.8206, 117.2272),
+}
 
 
 class _Located(Protocol):
@@ -19,10 +22,35 @@ def origin_from_query(query: RetrievalQuery) -> Origin | None:
 
 
 def origin_from_request(request: PoolRequest) -> Origin | None:
-    return _origin_from_values(
+    explicit_origin = _origin_from_values(
         getattr(request, "origin_latitude", None),
         getattr(request, "origin_longitude", None),
     )
+    if explicit_origin is not None:
+        return explicit_origin
+
+    destination = getattr(getattr(request, "need_profile", None), "destination", None)
+    profile_origin = _origin_from_values(
+        getattr(destination, "start_latitude", None),
+        getattr(destination, "start_longitude", None),
+    )
+    if profile_origin is not None:
+        return profile_origin
+
+    return DEFAULT_CITY_ORIGINS.get(_city_from_request(request))
+
+
+def radius_from_request(request: PoolRequest) -> int | None:
+    explicit_radius = getattr(request, "radius_meters", None)
+    if explicit_radius is not None:
+        return explicit_radius
+
+    destination = getattr(getattr(request, "need_profile", None), "destination", None)
+    profile_radius = getattr(destination, "radius_meters", None)
+    if profile_radius is not None:
+        return profile_radius
+
+    return None
 
 
 def origin_from_context(context: PlanContext | None) -> Origin | None:
@@ -48,7 +76,8 @@ def within_radius(poi: _Located, origin: Origin | None, radius_meters: int | Non
 
 
 def plan_context_from_pool_request(request: PoolRequest, city: str) -> PlanContext | None:
-    if origin_from_request(request) is None:
+    origin = origin_from_request(request)
+    if origin is None:
         return None
     return PlanContext(
         city=city,
@@ -56,10 +85,15 @@ def plan_context_from_pool_request(request: PoolRequest, city: str) -> PlanConte
         time_window=request.time_window,
         party=request.party,
         budget_per_person=request.budget_per_person,
-        origin_latitude=getattr(request, "origin_latitude", None),
-        origin_longitude=getattr(request, "origin_longitude", None),
-        radius_meters=getattr(request, "radius_meters", None),
+        origin_latitude=origin[0],
+        origin_longitude=origin[1],
+        radius_meters=radius_from_request(request),
     )
+
+
+def _city_from_request(request: PoolRequest) -> str:
+    profile_city = getattr(getattr(getattr(request, "need_profile", None), "destination", None), "city", None)
+    return str(profile_city or getattr(request, "city", "") or "")
 
 
 def _origin_from_values(latitude: float | None, longitude: float | None) -> Origin | None:

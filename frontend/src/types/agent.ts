@@ -2,6 +2,7 @@ import type { PoolResponse, TimeWindow } from "./pool"
 import type { PreferenceSnapshot } from "./preferences"
 import type { RouteChainResponse } from "./route"
 import type { StoryPlan } from "./story"
+import type { UserNeedProfile } from "./onboarding"
 
 export interface AgentCritique {
   theme_coherence: number
@@ -21,6 +22,10 @@ export interface AgentRunRequest {
   time_window?: TimeWindow | null
   date: string
   budget_per_person?: number
+  need_profile?: UserNeedProfile
+  origin_latitude?: number
+  origin_longitude?: number
+  radius_meters?: number
   preference_snapshot?: PreferenceSnapshot
   session_id?: string
   parent_session_id?: string

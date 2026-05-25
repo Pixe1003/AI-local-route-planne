@@ -1,6 +1,6 @@
 # AIroute 当前架构
 
-本文描述 `codex/unified-refactor` 分支当前真实链路，不把计划项写成已完成项。
+本文描述 `codex/product-rag-amap-demo` 分支当前真实链路，不把计划项写成已完成项。
 
 ## 主链路
 
@@ -37,21 +37,24 @@ backend/app
 
 ## 检索与候选池
 
-- POI 主数据来自 `load_seed_pois()` 和可用的 SQLite 文件；没有本地合肥 SQLite 时，Hefei seed fallback 保证主链路可跑。
+- POI 主数据来自可用的 SQLite 文件和 `load_seed_pois()`；成品验收以真实 `hefei_pois.sqlite` 为准，seed fallback 只作为降级。
 - 可选 FAISS RAG 使用同一索引目录下的 `index.faiss` + `meta.jsonl`，文档类型是 `poi_profile` 和 `ugc_review`。
 - `RetrievalService` 按 `poi_id` 聚合召回结果，输出 `semantic_poi_profile` / `semantic_ugc_review` provenance 和 top evidence。
-- `PoolService` 融合 semantic POI、semantic UGC、SQLite FTS/bucket、seed fallback，并把 evidence/provenance 暴露给前端 pool 类型。
+- `PoolService` 融合 semantic POI、semantic UGC、SQLite FTS/bucket、seed fallback，并把 evidence/provenance/distance 暴露给前端 pool 类型。
+- 前端默认带合肥市中心出发点和半径，也允许在生成面板切换出发点；`UserNeedProfile.destination` 会保存起点经纬度，后端在缺少显式 origin 时按 profile 或合肥默认起点兜底。
+- 候选池排序的距离惩罚只来自 `PoiScoringService` 的 profile breakdown；外层 pool score 不再额外扣一次距离，避免远距离 POI 被双重惩罚。
 
 ## 路线与距离
 
 - `/api/route/chain` 已接高德 Web Service client；无 key 时返回配置错误，有缓存和 mock 测试覆盖。
+- `solver/distance.py` 已优先尝试高德距离/耗时，失败或无 key 时降级到 haversine，并在 `Transport.source` 标记 `amap` 或 `fallback`。
 - `solver_service.py` 当前仍是 greedy 求解；P2-1 优化器尚未实现。
-- `solver/distance.py` 当前仍使用 haversine 估算；高德距离/耗时还没有接入 solver 或候选池评分。
 - `route_replanner.py` 仍按当前 POI 列表重排/替换，没有“已完成站点锁定”概念；P2-3 尚未实现。
+- `route_validator.py` 对缺失营业时间只发 `opening_hours_unknown` warning，并按 `poi_id` 去重；真实数据 open_hours 覆盖不足时不会把 unknown 当成 closed error。
 
 ## 已知缺口
 
-- 真实 embedding 模型 + 本地数据的 FAISS smoke 尚未跑通。
+- 真实数据 smoke 已支持 `AIROUTE_REAL_DATA_DIR`；测试会用真实 SQLite/UGC 和 deterministic fake embedder 跑通 `build_faiss_rag`，完整真实 embedding 模型全量构建仍依赖本机模型下载和数据文件。
 - Agent memory 模块保留自 `origin/main`，但没有和统一 FAISS retrieval contract 做新的深度接入。
 - Observability 基础模块和 `/health` 存在，但统一检索链路的完整 trace/metrics 还没补齐。
 - Embedding cache 存在，检索结果级缓存还没实现。

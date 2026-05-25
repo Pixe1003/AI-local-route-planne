@@ -48,7 +48,7 @@ class RouteValidator:
                 )
             )
 
-        opening_issue_poi_ids: set[str] = set()
+        opening_issue_keys: set[tuple[str, str]] = set()
         for stop in route.stops:
             poi = poi_by_id.get(stop.poi_id)
             if poi is None:
@@ -60,17 +60,31 @@ class RouteValidator:
                     )
                 )
                 continue
-            if context and not self._is_open(poi, context.date, stop.arrival_time):
-                if poi.id in opening_issue_poi_ids:
+            if context:
+                opening_status = self._opening_status(poi, context.date, stop.arrival_time)
+                if opening_status == "open":
                     continue
-                opening_issue_poi_ids.add(poi.id)
-                issues.append(
-                    ValidationIssue(
-                        code="poi_closed",
-                        message=f"{poi.name} 在 {stop.arrival_time} 未营业。",
-                        target=poi.id,
+                issue_key = (poi.id, opening_status)
+                if issue_key in opening_issue_keys:
+                    continue
+                opening_issue_keys.add(issue_key)
+                if opening_status == "closed":
+                    issues.append(
+                        ValidationIssue(
+                            code="poi_closed",
+                            message=f"{poi.name} 在 {stop.arrival_time} 未营业。",
+                            target=poi.id,
+                        )
                     )
-                )
+                else:
+                    issues.append(
+                        ValidationIssue(
+                            code="opening_hours_unknown",
+                            message=f"{poi.name} 缺少营业时间数据，无法校验 {stop.arrival_time} 是否营业。",
+                            severity="warning",
+                            target=poi.id,
+                        )
+                    )
 
         duration_budget = minutes_between(
             intent.hard_constraints.start_time, intent.hard_constraints.end_time
@@ -104,9 +118,13 @@ class RouteValidator:
         queue_threshold = 45 if intent.soft_preferences.avoid_queue else 60
         if profile and "长时间排队" in profile.avoid:
             queue_threshold = 35
+        queue_issue_poi_ids: set[str] = set()
         for stop in route.stops:
             poi = poi_by_id.get(stop.poi_id)
             if poi and poi.queue_estimate["weekend_peak"] > queue_threshold:
+                if poi.id in queue_issue_poi_ids:
+                    continue
+                queue_issue_poi_ids.add(poi.id)
                 issues.append(
                     ValidationIssue(
                         code="queue_threshold_exceeded",
@@ -121,17 +139,19 @@ class RouteValidator:
             repaired_count=repaired_count,
         )
 
-    def _is_open(self, poi, date: str, arrival_time: str) -> bool:
+    def _opening_status(self, poi, date: str, arrival_time: str) -> str:
         if not poi.open_hours:
-            return True
+            return "unknown"
         try:
             weekday = date_type.fromisoformat(date).strftime("%A").lower()
         except ValueError:
             weekday = "saturday"
         windows = poi.open_hours.get(weekday, []) if poi.open_hours else []
         if not windows:
-            return True
-        return any(window["open"] <= arrival_time <= window["close"] for window in windows)
+            return "unknown"
+        if any(window["open"] <= arrival_time <= window["close"] for window in windows):
+            return "open"
+        return "closed"
 
     def _has_experience_options(self, context: PlanContext | None) -> bool:
         if context is None:

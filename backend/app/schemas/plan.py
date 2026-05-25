@@ -47,7 +47,7 @@ class Transport(BaseModel):
     mode: str
     duration_min: int
     distance_meters: int
-    source: Literal["estimated"] = "estimated"
+    source: Literal["amap", "estimated", "fallback"] = "estimated"
 
 
 class RouteStop(BaseModel):

@@ -20,6 +20,7 @@ body {
 
 button,
 input,
+select,
 textarea {
   font: inherit;
 }
@@ -50,6 +51,7 @@ label,
 }
 
 input,
+select,
 textarea {
   width: 100%;
   border: 1px solid #d8dfeb;
@@ -709,6 +711,41 @@ textarea {
   color: #67728a;
 }
 
+.system-status-row,
+.provenance-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.system-status-row span,
+.provenance-row span,
+.route-retrieval-evidence span {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: #edf4ff;
+  color: #24508f;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.route-retrieval-evidence {
+  margin-top: 8px;
+}
+
+.route-retrieval-evidence blockquote {
+  margin: 6px 0 0;
+  padding-left: 10px;
+  border-left: 3px solid #9bd7c7;
+  color: #40516b;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
 .route-story-evidence {
   margin-top: 8px;
   color: #34405a;
@@ -822,6 +859,7 @@ textarea {
   }
 
   input,
+  select,
   textarea {
     min-height: 46px;
     font-size: 16px;

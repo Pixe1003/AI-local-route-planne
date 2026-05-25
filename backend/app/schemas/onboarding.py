@@ -6,6 +6,9 @@ from pydantic import BaseModel, Field
 class DestinationProfile(BaseModel):
     city: str = "hefei"
     start_location: Optional[str] = None
+    start_latitude: Optional[float] = None
+    start_longitude: Optional[float] = None
+    radius_meters: Optional[int] = None
     target_area: Optional[str] = None
     end_location: Optional[str] = None
 
@@ -41,7 +44,12 @@ class UserNeedProfile(BaseModel):
     @classmethod
     def from_plan_context(cls, context: Any, raw_query: str | None = None) -> "UserNeedProfile":
         return cls(
-            destination=DestinationProfile(city=context.city),
+            destination=DestinationProfile(
+                city=context.city,
+                start_latitude=getattr(context, "origin_latitude", None),
+                start_longitude=getattr(context, "origin_longitude", None),
+                radius_meters=getattr(context, "radius_meters", None),
+            ),
             time=TimeProfile(
                 start_time=context.time_window.start,
                 end_time=context.time_window.end,
@@ -67,6 +75,9 @@ class UserNeedProfile(BaseModel):
             ),
             party=self.party_type,
             budget_per_person=self.budget.budget_per_person,
+            origin_latitude=self.destination.start_latitude,
+            origin_longitude=self.destination.start_longitude,
+            radius_meters=self.destination.radius_meters,
         )
 
 
