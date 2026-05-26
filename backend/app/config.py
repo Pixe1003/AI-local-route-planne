@@ -23,6 +23,9 @@ class Settings(BaseSettings):
     embedding_model: str = "text-embedding-3-small"
     embedding_timeout_seconds: int = 30
     amap_key: str = ""
+    amap_base_url: str = "https://restapi.amap.com"
+    amap_timeout_seconds: int = 5
+    app_state_sqlite_path: str = "./data/processed/app_state.sqlite"
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 

@@ -11,7 +11,8 @@ from app.services.category_policy import (
 )
 from app.services.poi_scoring_service import PoiScoringService
 from app.services.route_repairer import RouteRepairer
-from app.solver.distance import estimate_transport, haversine_meters
+from app.solver.distance import estimate_transport
+from app.solver.ordering import optimize_visit_order
 from app.solver.styles import PLAN_STYLES
 from app.utils.time_utils import add_minutes, minutes_between
 
@@ -30,15 +31,12 @@ class SolverService:
         profile: UserNeedProfile | None = None,
         preference_snapshot: PreferenceSnapshot | None = None,
     ) -> list[RouteSkeleton]:
-        ids = self._ensure_minimum_candidates(
-            candidate_poi_ids,
-            context.city if context else get_settings().default_city,
-            intent,
-        )
+        city = context.city if context else self._infer_city(candidate_poi_ids)
+        ids = self._ensure_minimum_candidates(candidate_poi_ids, city, intent)
         repairer = RouteRepairer(repo=self.repo)
         return [
             repairer.repair(
-                self._solve_style(intent, ids, style, profile, preference_snapshot),
+                self._solve_style(intent, ids, style, profile, preference_snapshot, city),
                 intent,
                 context=context,
                 profile=profile,
@@ -46,6 +44,12 @@ class SolverService:
             )
             for style in PLAN_STYLES
         ]
+
+    def _infer_city(self, candidate_poi_ids: list[str]) -> str:
+        for poi in self.repo.get_many(candidate_poi_ids):
+            if poi.city:
+                return poi.city
+        return get_settings().default_city
 
     def _ensure_minimum_candidates(
         self, candidate_poi_ids: list[str], city: str, intent: StructuredIntent
@@ -83,6 +87,7 @@ class SolverService:
         style: str,
         profile: UserNeedProfile | None,
         preference_snapshot: PreferenceSnapshot | None,
+        city: str | None = None,
     ) -> RouteSkeleton:
         pois = [poi for poi in self.repo.get_many(candidate_poi_ids) if poi.id not in intent.avoid_pois]
         reasonable = [poi for poi in pois if self._reasonable_main_candidate(poi, intent)]
@@ -97,13 +102,28 @@ class SolverService:
         route_pois = sorted_pois[: max(3, min(max_count, len(sorted_pois)))]
         route_pois = self._ensure_route_coverage(route_pois, sorted_pois, intent)
         route_pois = self._fit_budget(route_pois, sorted_pois, intent)
-        if style == "efficient":
-            route_pois = self._nearest_order(route_pois)
-        elif style == "foodie_first":
-            route_pois = sorted(route_pois, key=lambda poi: (poi.category != "restaurant", poi.category != "cafe"))
+        route_pois = self._order_for_style(route_pois, style, city)
+        return self._build_route(style, route_pois, intent, candidate_poi_ids, city)
+
+    def _order_for_style(self, route_pois, style: str, city: str | None):
+        """Order stops to minimise back-tracking while keeping each style's anchor.
+
+        All styles are now geography-aware (nearest-neighbour + 2-opt); the
+        difference is which stop anchors the route: foodie_first opens at a
+        restaurant, relaxed opens at the lowest-queue stop, efficient just
+        opens at its highest-scored stop.
+        """
+        if not route_pois:
+            return route_pois
+        if style == "foodie_first":
+            anchor = next((poi for poi in route_pois if poi.category == "restaurant"), None)
+        elif style == "relaxed":
+            anchor = min(route_pois, key=lambda poi: poi.queue_estimate["weekend_peak"])
         else:
-            route_pois = sorted(route_pois, key=lambda poi: (poi.queue_estimate["weekend_peak"], -poi.rating))
-        return self._build_route(style, route_pois, intent, candidate_poi_ids)
+            anchor = route_pois[0]
+        return optimize_visit_order(
+            route_pois, start_id=anchor.id if anchor else None, city=city
+        )
 
     def _ensure_route_coverage(self, route_pois, sorted_pois, intent: StructuredIntent):
         next_pois = list(route_pois)
@@ -164,6 +184,7 @@ class SolverService:
         route_pois,
         intent: StructuredIntent,
         candidate_poi_ids: list[str],
+        city: str | None = None,
     ) -> RouteSkeleton:
         stops: list[RouteStop] = []
         current_time = intent.hard_constraints.start_time
@@ -176,7 +197,7 @@ class SolverService:
             departure = add_minutes(arrival, duration)
             transport = None
             if index < len(route_pois) - 1:
-                transport = estimate_transport(poi, route_pois[index + 1])
+                transport = estimate_transport(poi, route_pois[index + 1], city=city)
                 total_distance += transport.distance_meters if transport.mode == "walking" else 0
                 current_time = add_minutes(departure, transport.duration_min)
             stops.append(
@@ -248,15 +269,3 @@ class SolverService:
         if intent.soft_preferences.avoid_queue and poi.queue_estimate["weekend_peak"] > 50:
             return False
         return True
-
-    def _nearest_order(self, pois):
-        if not pois:
-            return []
-        ordered = [pois[0]]
-        remaining = pois[1:]
-        while remaining:
-            current = ordered[-1]
-            next_poi = min(remaining, key=lambda poi: haversine_meters(current, poi))
-            ordered.append(next_poi)
-            remaining.remove(next_poi)
-        return ordered

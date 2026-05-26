@@ -28,14 +28,17 @@ flowchart LR
 frontend/src
   App.tsx                         路由入口
   api/client.ts                   后端 API 封装
-  pages/DiscoveryFeedPage.tsx     首屏 UGC Feed 与规划入口
+  pages/DiscoveryFeedPage.tsx     首屏 UGC Feed 与规划入口（含就近定位）
   pages/PlanResultPage.tsx        主路线、备选 POI、对话调整
-  pages/TripsPage.tsx             已保存行程列表
+  pages/TripHomePage.tsx          已保存行程入口
   pages/TripDetailPage.tsx        行程详情
+  pages/TripCreatePage.tsx        直接创建行程
+  pages/RecommendPoolPage.tsx     候选池浏览
   store/preferenceStore.ts        收藏状态与偏好快照
+  store/poolStore.ts              候选池状态
   store/planStore.ts              当前路线、备选、聊天记录
   store/tripStore.ts              行程管理状态
-  types/api.ts                    前后端共享响应类型
+  types/*.ts                      前后端共享响应类型
 ```
 
 首屏不再进入旧的多步骤规划页，而是先通过 UGC Feed 让用户形成可解释的偏好数据。生成路线时，前端会把 `preference_snapshot` 一起传给候选池和路线规划接口。
@@ -51,14 +54,23 @@ backend/app
   api/routes_plan.py              主路线生成
   api/routes_chat.py              对话调整与替换动作
   api/routes_meta.py              城市、persona 等元数据
-  repositories/poi_repository.py  本地 seed POI/UGC 数据访问
+  repositories/poi_repo.py        seed + SQLite POI 数据访问
+  repositories/sqlite_poi_repo.py 合肥三表 SQLite 读取
+  repositories/rag_index.py       Chroma 向量索引（RAG）
+  repositories/vector_repo.py     关键词/同义词本地评分回退
   schemas/*.py                    请求、响应、路线、偏好类型
   services/preference_service.py  偏好权重计算
+  services/retrieval_service.py   多通道语义召回（引擎无关）
   services/pool_service.py        候选召回与评分
+  services/poi_scoring_service.py POI 评分分解（含距离项）
   services/plan_service.py        规划编排
   services/chat_service.py        动态调整
-  services/solver_service.py      路线求解
-  services/validator.py           路线约束校验
+  services/solver_service.py      路线求解（最近邻 + 2-opt）
+  services/route_repairer.py      约束修复
+  services/route_validator.py     路线约束校验
+  services/category_policy.py     类目归一与分组
+  services/location_context.py    出发点 / 半径 / 距离工具
+  solver/distance.py              距离与交通估算（高德 + haversine 回退）
 ```
 
 已删除旧版未使用模块：

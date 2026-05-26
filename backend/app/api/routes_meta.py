@@ -2,6 +2,7 @@ from fastapi import APIRouter, HTTPException
 
 from app.config import get_settings
 from app.repositories.poi_repo import get_poi_repository
+from app.repositories.rag_index import get_rag_status
 
 router = APIRouter(tags=["meta"])
 
@@ -40,6 +41,18 @@ def cities() -> list[dict[str, str]]:
         {"value": "shanghai", "label": "上海"},
     ]
     return sorted(cities, key=lambda item: item["value"] != default_city)
+
+
+@router.get("/meta/integrations")
+def integrations() -> dict[str, object]:
+    settings = get_settings()
+    rag = get_rag_status()
+    return {
+        "llm": bool(settings.llm_api_key),
+        "embedding": bool(settings.embedding_api_key),
+        "amap": bool(settings.amap_key),
+        "rag_collection_count": int(rag.get("collection_count", 0)),
+    }
 
 
 @router.get("/poi/{poi_id}")

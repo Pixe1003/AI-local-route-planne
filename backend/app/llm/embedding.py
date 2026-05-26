@@ -1,9 +1,12 @@
 from collections import OrderedDict
+import logging
 from typing import Any
 
 import httpx
 
 from app.config import get_settings
+
+logger = logging.getLogger(__name__)
 
 
 class EmbeddingUnavailable(RuntimeError):
@@ -39,6 +42,7 @@ class EmbeddingClient:
             return []
         settings = get_settings()
         if not settings.embedding_api_key:
+            logger.info("Embedding unavailable: no api key configured")
             raise EmbeddingUnavailable("embedding API key is not configured")
         base_url = settings.embedding_base_url or settings.llm_base_url or "https://api.openai.com/v1"
         try:
@@ -61,4 +65,5 @@ class EmbeddingClient:
         except Exception as exc:
             if isinstance(exc, EmbeddingUnavailable):
                 raise
+            logger.warning("Embedding call failed: %s", exc)
             raise EmbeddingUnavailable(str(exc)) from exc

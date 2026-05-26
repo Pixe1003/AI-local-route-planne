@@ -25,6 +25,9 @@ export interface PoolRequest {
   free_text?: string
   need_profile?: UserNeedProfile
   preference_snapshot?: PreferenceSnapshot
+  origin_latitude?: number
+  origin_longitude?: number
+  radius_meters?: number
 }
 
 export interface PoiInPool {
@@ -56,6 +59,7 @@ export interface PoolMeta {
   total_count: number
   generated_at: string
   user_persona_summary: string
+  data_warning?: string | null
 }
 
 export interface PoolResponse {

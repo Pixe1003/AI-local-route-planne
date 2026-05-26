@@ -8,6 +8,9 @@ export interface PlanContext {
   time_window: TimeWindow
   party?: string
   budget_per_person?: number
+  origin_latitude?: number
+  origin_longitude?: number
+  radius_meters?: number
 }
 
 export interface PlanRequest {

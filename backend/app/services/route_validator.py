@@ -44,33 +44,41 @@ class RouteValidator:
                 )
             )
 
+        # A POI can legitimately appear more than once in a route, so dedupe
+        # per-POI issues by (code, poi_id) to avoid emitting the same warning
+        # for every repeated occurrence.
+        seen_issue_keys: set[tuple[str, str]] = set()
+
+        def _add_once(code: str, target: str, message: str, severity: str = "error") -> None:
+            key = (code, target)
+            if key in seen_issue_keys:
+                return
+            seen_issue_keys.add(key)
+            issues.append(
+                ValidationIssue(code=code, message=message, severity=severity, target=target)
+            )
+
         for stop in route.stops:
             poi = poi_by_id.get(stop.poi_id)
             if poi is None:
-                issues.append(
-                    ValidationIssue(
-                        code="poi_not_found",
-                        message=f"{stop.poi_id} 不存在于 POI 数据源。",
-                        target=stop.poi_id,
-                    )
+                _add_once(
+                    "poi_not_found",
+                    stop.poi_id,
+                    f"{stop.poi_id} 不存在于 POI 数据源。",
                 )
                 continue
             if not poi.open_hours:
-                issues.append(
-                    ValidationIssue(
-                        code="opening_hours_unknown",
-                        message=f"{poi.name} 缺少营业时间数据，建议到店前确认。",
-                        severity="warning",
-                        target=poi.id,
-                    )
+                _add_once(
+                    "opening_hours_unknown",
+                    poi.id,
+                    f"{poi.name} 缺少营业时间数据，建议到店前确认。",
+                    severity="warning",
                 )
-            if context and not self._is_open(poi, context.date, stop.arrival_time):
-                issues.append(
-                    ValidationIssue(
-                        code="poi_closed",
-                        message=f"{poi.name} 在 {stop.arrival_time} 未营业。",
-                        target=poi.id,
-                    )
+            elif context and not self._is_open(poi, context.date, stop.arrival_time):
+                _add_once(
+                    "poi_closed",
+                    poi.id,
+                    f"{poi.name} 在 {stop.arrival_time} 未营业。",
                 )
 
         duration_budget = minutes_between(
@@ -108,12 +116,10 @@ class RouteValidator:
         for stop in route.stops:
             poi = poi_by_id.get(stop.poi_id)
             if poi and poi.queue_estimate["weekend_peak"] > queue_threshold:
-                issues.append(
-                    ValidationIssue(
-                        code="queue_threshold_exceeded",
-                        message=f"{poi.name} 排队预估 {poi.queue_estimate['weekend_peak']} 分钟超过阈值。",
-                        target=poi.id,
-                    )
+                _add_once(
+                    "queue_threshold_exceeded",
+                    poi.id,
+                    f"{poi.name} 排队预估 {poi.queue_estimate['weekend_peak']} 分钟超过阈值。",
                 )
 
         return ValidationResult(

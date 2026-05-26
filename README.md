@@ -39,6 +39,13 @@ $env:PYTHONPATH='backend'
 python -m app.repositories.rag_index build --city hefei --source data/processed/hefei_pois.sqlite --reset
 ```
 
+如本地缺少 `data/processed/hefei_pois.sqlite`，先从仓库内 JSONL 重建：
+
+```powershell
+$env:AMAP_KEY='<高德 Web 服务 key>' # 可选；无 key 时非餐饮点使用区级估算坐标兜底
+python scripts/build_poi_sqlite.py --city hefei --source data/processed/ugc_hefei.jsonl --out data/processed/hefei_pois.sqlite --geocode-cache data/processed/amap_geocode_cache.json --reset
+```
+
 Frontend:
 
 ```powershell
@@ -53,6 +60,14 @@ npm run dev
 - API docs: http://127.0.0.1:8000/docs
 - Frontend: http://127.0.0.1:5173
 
+## Docker 一键启动
+
+```bash
+cp .env.example .env   # 按需填入 LLM / Embedding / 高德 key，不填也可跑兜底链路
+docker compose up --build
+# frontend :5173  backend :8000  postgres :5432
+```
+
 ## 核心 API
 
 - `GET /api/ugc/feed`
@@ -62,6 +77,7 @@ npm run dev
 - `POST /api/chat/adjust`
 - `GET /api/meta/personas`
 - `GET /api/meta/cities`
+- `GET /api/meta/integrations`
 - `GET /api/poi/{poi_id}`
 
 ## 验证
@@ -74,3 +90,9 @@ cd frontend
 npm test
 npm run build
 ```
+
+## 现状与已知限制
+
+- **地图为兜底视图**：`frontend/src/components/PlanMap.tsx` 目前以 SVG 折线 + 标记展示站点顺序，尚未接入真实高德 JS 地图（`frontend/.env.local` 中的 `VITE_AMAP_JS_KEY` 已就绪，待重新接入）。
+- **状态持久化范围**：行程与版本历史已持久化到 `data/processed/app_state.sqlite`；方案 / 候选池 / agent run state 仍保存在进程内，按短生命周期处理。
+- **真实 AI / 高德链路需自备 key**：默认 Demo 全程走本地兜底，可正常演示；LLM、语义 RAG、高德通行时间需配置对应 key 才会真正启用。

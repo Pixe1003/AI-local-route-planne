@@ -3,6 +3,7 @@ from app.repositories.poi_repo import PoiRepository
 from app.schemas.onboarding import UserNeedProfile
 from app.schemas.plan import RouteMetrics, RouteSkeleton, RouteStop, StructuredIntent
 from app.schemas.preferences import PreferenceSnapshot
+from app.services.category_policy import EXPERIENCE_CATEGORIES
 from app.services.route_validator import RouteValidator
 from app.solver.distance import estimate_transport
 from app.utils.time_utils import add_minutes, minutes_between
@@ -12,6 +13,7 @@ class RouteRepairer:
     def __init__(self, repo: PoiRepository | None = None) -> None:
         self.repo = repo or get_poi_repository()
         self.validator = RouteValidator(repo=self.repo)
+        self._city: str | None = None
 
     def repair(
         self,
@@ -23,6 +25,10 @@ class RouteRepairer:
         preference_snapshot: PreferenceSnapshot | None = None,
         max_iterations: int = 2,
     ) -> RouteSkeleton:
+        # Thread the planning city so rebuilt legs can use the Amap transit
+        # estimator (which short-circuits without a city) instead of always
+        # falling back to haversine.
+        self._city = getattr(context, "city", None)
         current = route
         repaired_count = 0
         for _ in range(max_iterations):
@@ -70,8 +76,9 @@ class RouteRepairer:
     def _drop_last_stop(self, route: RouteSkeleton, intent: StructuredIntent) -> RouteSkeleton:
         if len(route.stops) <= 3:
             return route
-        kept_ids = [stop.poi_id for stop in route.stops[:-1]]
-        dropped_id = route.stops[-1].poi_id
+        drop_index = self._time_drop_index(route, intent)
+        dropped_id = route.stops[drop_index].poi_id
+        kept_ids = [stop.poi_id for index, stop in enumerate(route.stops) if index != drop_index]
         return self._build_route(
             route.style,
             kept_ids,
@@ -79,6 +86,37 @@ class RouteRepairer:
             route.dropped_poi_ids + [dropped_id],
             {**route.drop_reasons, dropped_id: "时间窗不足，自动压缩路线"},
         )
+
+    def _time_drop_index(self, route: RouteSkeleton, intent: StructuredIntent) -> int:
+        protected_ids = self._protected_stop_ids(route, intent)
+        for index in range(len(route.stops) - 1, -1, -1):
+            if route.stops[index].poi_id not in protected_ids:
+                return index
+        return len(route.stops) - 1
+
+    def _protected_stop_ids(self, route: RouteSkeleton, intent: StructuredIntent) -> set[str]:
+        pois = {poi.id: poi for poi in self.repo.get_many([stop.poi_id for stop in route.stops])}
+        categories = [pois[stop.poi_id].category for stop in route.stops if stop.poi_id in pois]
+        meal_count = categories.count("restaurant")
+        experience_count = sum(1 for category in categories if category in EXPERIENCE_CATEGORIES)
+        protected_ids: set[str] = set()
+        for stop in route.stops:
+            poi = pois.get(stop.poi_id)
+            if poi is None:
+                continue
+            if (
+                intent.hard_constraints.must_include_meal
+                and poi.category == "restaurant"
+                and meal_count <= 1
+            ):
+                protected_ids.add(stop.poi_id)
+            if (
+                intent.hard_constraints.must_include_experience
+                and poi.category in EXPERIENCE_CATEGORIES
+                and experience_count <= 1
+            ):
+                protected_ids.add(stop.poi_id)
+        return protected_ids
 
     def _compress_stop_durations(
         self,
@@ -132,7 +170,17 @@ class RouteRepairer:
     ) -> RouteSkeleton:
         if len(route.stops) <= 3:
             return route
-        priced = [(self.repo.get(stop.poi_id).price_per_person or 0, stop.poi_id) for stop in route.stops]
+        protected_ids = self._protected_stop_ids(route, intent)
+        priced = [
+            (self.repo.get(stop.poi_id).price_per_person or 0, stop.poi_id)
+            for stop in route.stops
+            if stop.poi_id not in protected_ids
+        ]
+        if not priced:
+            priced = [
+                (self.repo.get(stop.poi_id).price_per_person or 0, stop.poi_id)
+                for stop in route.stops
+            ]
         _, dropped_id = max(priced)
         kept_ids = [stop.poi_id for stop in route.stops if stop.poi_id != dropped_id]
         return self._build_route(
@@ -192,7 +240,7 @@ class RouteRepairer:
             departure = add_minutes(arrival, duration)
             transport = None
             if index < len(pois) - 1:
-                transport = estimate_transport(poi, pois[index + 1])
+                transport = estimate_transport(poi, pois[index + 1], city=self._city)
                 total_distance += transport.distance_meters if transport.mode == "walking" else 0
                 current_time = add_minutes(departure, transport.duration_min)
             stops.append(

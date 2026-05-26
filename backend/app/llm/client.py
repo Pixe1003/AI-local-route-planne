@@ -1,4 +1,5 @@
 import json
+import logging
 import re
 from typing import Any
 
@@ -6,6 +7,8 @@ import httpx
 
 from app.config import get_settings
 from app.services.agent_skill_registry import get_agent_skill_registry
+
+logger = logging.getLogger(__name__)
 
 
 class LlmClient:
@@ -26,6 +29,7 @@ class LlmClient:
     ) -> dict[str, Any]:
         settings = get_settings()
         if not settings.llm_api_key:
+            logger.info("LLM fallback: no api key configured")
             return fallback
         system_content = get_agent_skill_registry().build_system_prompt(
             agent_name,
@@ -57,7 +61,8 @@ class LlmClient:
             response.raise_for_status()
             content = response.json()["choices"][0]["message"]["content"]
             return self._parse_json_content(content, fallback)
-        except Exception:
+        except Exception as exc:
+            logger.warning("LLM call failed, using fallback: %s", exc)
             return fallback
 
     def _base_url(self, settings) -> str:

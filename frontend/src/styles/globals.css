@@ -365,6 +365,17 @@ textarea {
   display: block;
 }
 
+.poi-image-placeholder,
+.ugc-cover-placeholder {
+  align-items: center;
+  background: linear-gradient(135deg, #dce6f2, #f4f7fb);
+  color: #506176;
+  display: flex;
+  font-size: 0.84rem;
+  font-weight: 700;
+  justify-content: center;
+}
+
 .corner-check {
   position: absolute;
   right: 10px;
@@ -501,6 +512,35 @@ textarea {
     linear-gradient(rgba(255, 255, 255, 0.7) 1px, transparent 1px),
     #d9e8ec;
   background-size: 48px 48px;
+}
+
+.real-map {
+  min-height: 520px;
+  overflow: hidden;
+}
+
+.empty-map {
+  display: grid;
+  place-items: center;
+  color: #67728a;
+  font-weight: 800;
+}
+
+.amap-stop-marker {
+  width: 34px;
+  height: 34px;
+  border: 2px solid #ffffff;
+  border-radius: 50%;
+  background: #1677ff;
+  color: #ffffff;
+  font-weight: 900;
+  box-shadow: 0 8px 22px rgba(22, 119, 255, 0.35);
+}
+
+.amap-stop-marker.active {
+  width: 44px;
+  height: 44px;
+  background: #d45500;
 }
 
 .route-line {

@@ -64,7 +64,6 @@ class PoolService:
                         retrieval_score=(
                             retrieved_by_id[poi.id].score if poi.id in retrieved_by_id else None
                         ),
-                        origin=origin,
                         context=scoring_context,
                     ),
                     poi,
@@ -149,9 +148,13 @@ class PoolService:
         budget_per_person: int | None,
         request: PoolRequest | None = None,
         retrieval_score: float | None = None,
-        origin: tuple[float, float] | None = None,
         context=None,
     ) -> float:
+        # `context` carries the origin when one is supplied, so the scoring
+        # service already folds a distance penalty into `breakdown.total`
+        # (surfaced via `profile_score` below). The pool layer therefore must
+        # NOT subtract a second distance penalty, or proximity gets counted
+        # twice. Distance proximity lives solely in the scoring service.
         breakdown = self.poi_scorer.score_poi(
             poi,
             context=context,
@@ -170,11 +173,6 @@ class PoolService:
         budget_penalty = 0.0
         if budget_per_person and poi.price_per_person and poi.price_per_person > budget_per_person:
             budget_penalty = min((poi.price_per_person - budget_per_person) / max(budget_per_person, 1), 2) * 0.18
-        distance_penalty = 0.0
-        if origin:
-            distance = distance_from_origin(poi, origin)
-            if distance is not None:
-                distance_penalty = min(max(0, distance - 1500) / 1000 * 0.02, 0.18)
         return max(
             0,
             min(
@@ -185,8 +183,7 @@ class PoolService:
                 + queue_bonus
                 + profile_score
                 + history_score
-                - budget_penalty
-                - distance_penalty,
+                - budget_penalty,
             ),
         )
 

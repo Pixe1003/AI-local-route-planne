@@ -2,23 +2,22 @@ from datetime import datetime, timezone
 from uuid import uuid4
 
 from app.config import get_settings
+from app.repositories.trip_store import TripStore
 from app.schemas.trip import RouteVersion, SaveRouteVersionRequest, TripRecord, TripSummary
 from app.services.agent_skill_registry import get_agent_skill_registry
-from app.services.state import TRIP_REGISTRY
 
 
 class TripService:
-    def __init__(self) -> None:
+    def __init__(self, store: TripStore | None = None) -> None:
         self.agent_skill = get_agent_skill_registry().get_skill("trip_manager")
+        self.store = store or TripStore()
 
     def list_trips(self, user_id: str) -> list[TripSummary]:
-        summaries = [
-            trip.summary for trip in TRIP_REGISTRY.values() if trip.user_id == user_id
-        ]
+        summaries = [trip.summary for trip in self.store.list_by_user(user_id)]
         return sorted(summaries, key=lambda summary: summary.updated_at, reverse=True)
 
     def get_trip(self, trip_id: str) -> TripRecord | None:
-        return TRIP_REGISTRY.get(trip_id)
+        return self.store.get(trip_id)
 
     def save_route_version(self, request: SaveRouteVersionRequest) -> TripRecord:
         if not request.plans:
@@ -39,7 +38,7 @@ class TripService:
         )
 
         if request.trip_id:
-            trip = TRIP_REGISTRY.get(request.trip_id)
+            trip = self.store.get(request.trip_id)
             if trip is None:
                 raise KeyError(request.trip_id)
             trip.profile = request.profile
@@ -64,7 +63,7 @@ class TripService:
                 summary=summary,
             )
 
-        TRIP_REGISTRY[trip.trip_id] = trip
+        self.store.upsert(trip)
         return trip
 
     def _make_summary(self, trip: TripRecord, version: RouteVersion) -> TripSummary:

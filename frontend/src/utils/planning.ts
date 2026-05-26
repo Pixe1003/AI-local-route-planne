@@ -3,7 +3,16 @@ import type { PlanContext } from "../types/plan"
 
 export const DEFAULT_CITY = "hefei"
 
-export function planningContextFromProfile(profile: UserNeedProfile): PlanContext {
+export interface OriginInput {
+  latitude?: number | null
+  longitude?: number | null
+  radiusMeters?: number | null
+}
+
+export function planningContextFromProfile(
+  profile: UserNeedProfile,
+  origin?: OriginInput
+): PlanContext {
   return {
     city: profile.destination.city || DEFAULT_CITY,
     date: profile.date,
@@ -12,7 +21,10 @@ export function planningContextFromProfile(profile: UserNeedProfile): PlanContex
       end: profile.time.end_time || "21:00"
     },
     party: profile.party_type ?? undefined,
-    budget_per_person: profile.budget.budget_per_person ?? undefined
+    budget_per_person: profile.budget.budget_per_person ?? undefined,
+    origin_latitude: origin?.latitude ?? undefined,
+    origin_longitude: origin?.longitude ?? undefined,
+    radius_meters: origin?.radiusMeters ?? undefined
   }
 }
 

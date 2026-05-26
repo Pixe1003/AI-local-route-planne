@@ -40,6 +40,10 @@ export function DiscoveryFeedPage() {
   const [start, setStart] = useState("14:00")
   const [end, setEnd] = useState("20:00")
   const [budget, setBudget] = useState(180)
+  const [origin, setOrigin] = useState<{ latitude: number; longitude: number } | null>(null)
+  const [radiusKm, setRadiusKm] = useState(3)
+  const [locating, setLocating] = useState(false)
+  const [locateError, setLocateError] = useState<string | null>(null)
 
   useEffect(() => {
     fetchUgcFeed()
@@ -81,6 +85,31 @@ export function DiscoveryFeedPage() {
     raw_query: query
   })
 
+  const radiusMeters = Math.round(radiusKm * 1000)
+  const originInput = origin
+    ? { latitude: origin.latitude, longitude: origin.longitude, radiusMeters }
+    : undefined
+
+  const useMyLocation = () => {
+    if (typeof navigator === "undefined" || !("geolocation" in navigator)) {
+      setLocateError("当前浏览器不支持定位，可跳过就近规划")
+      return
+    }
+    setLocating(true)
+    setLocateError(null)
+    navigator.geolocation.getCurrentPosition(
+      position => {
+        setOrigin({ latitude: position.coords.latitude, longitude: position.coords.longitude })
+        setLocating(false)
+      },
+      error => {
+        setLocateError(error.message || "定位失败，可跳过就近规划")
+        setLocating(false)
+      },
+      { enableHighAccuracy: true, timeout: 8000 }
+    )
+  }
+
   const poolRequest = (profile: UserNeedProfile, snapshot: PreferenceSnapshot): PoolRequest => ({
     user_id: userId,
     city: DEFAULT_CITY,
@@ -92,7 +121,10 @@ export function DiscoveryFeedPage() {
     budget_per_person: budget,
     free_text: query,
     need_profile: profile,
-    preference_snapshot: snapshot
+    preference_snapshot: snapshot,
+    origin_latitude: origin?.latitude,
+    origin_longitude: origin?.longitude,
+    radius_meters: origin ? radiusMeters : undefined
   })
 
   const submit = async (event: FormEvent) => {
@@ -108,13 +140,14 @@ export function DiscoveryFeedPage() {
       selected_poi_ids: pool.default_selected_ids,
       free_text: query,
       need_profile: profile,
-      preference_snapshot: snapshot
+      preference_snapshot: snapshot,
+      context: planningContextFromProfile(profile, originInput)
     })
     if (!planResponse?.plans.length) return
     const trip = await saveVersion({
       user_id: userId,
       profile,
-      planning_context: planningContextFromProfile(profile),
+      planning_context: planningContextFromProfile(profile, originInput),
       plans: planResponse.plans,
       active_plan_id: planResponse.plans[0].plan_id,
       pool_id: pool.pool_id,
@@ -151,7 +184,13 @@ export function DiscoveryFeedPage() {
         {feed.map(item => (
           <article className={isLiked(item.poi_id) ? "ugc-card liked" : "ugc-card"} key={item.post_id}>
             <div className="ugc-cover-wrap">
-              <img alt={item.poi_name} className="ugc-cover" src={item.cover_image ?? ""} />
+              {item.cover_image ? (
+                <img alt={item.poi_name} className="ugc-cover" src={item.cover_image} />
+              ) : (
+                <div aria-label={`${item.poi_name} no cover image`} className="ugc-cover ugc-cover-placeholder">
+                  AIroute
+                </div>
+              )}
               <button
                 className={isLiked(item.poi_id) ? "heart-button active" : "heart-button"}
                 onClick={() => toggleLike(item)}
@@ -216,6 +255,31 @@ export function DiscoveryFeedPage() {
               <input onChange={event => setEnd(event.target.value)} type="time" value={end} />
             </label>
           </div>
+          <div className="form-row">
+            <button className="secondary-button" disabled={locating} onClick={useMyLocation} type="button">
+              <MapPin size={16} />
+              {origin ? "已获取当前位置" : locating ? "定位中" : "使用我的位置（就近）"}
+            </button>
+            <label>
+              <span>半径(km)</span>
+              <input
+                max={20}
+                min={1}
+                onChange={event => setRadiusKm(Number(event.target.value))}
+                type="number"
+                value={radiusKm}
+              />
+            </label>
+          </div>
+          {origin ? (
+            <small className="hint-text">
+              将优先召回你附近 {radiusKm}km 内的候选，并按距离参与评分。{" "}
+              <button className="secondary-button" onClick={() => setOrigin(null)} type="button">
+                清除位置
+              </button>
+            </small>
+          ) : null}
+          {locateError ? <p className="error-text">{locateError}</p> : null}
           {poolError || planError || tripError ? <p className="error-text">{poolError ?? planError ?? tripError}</p> : null}
           <button className="primary-button" disabled={busy} type="submit">
             <Route size={18} />

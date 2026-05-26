@@ -28,7 +28,13 @@ export function PoiCard({
             <Check size={16} />
           </span>
         ) : null}
-        <img alt={poi.name} className="poi-image" src={poi.cover_image ?? ""} />
+        {poi.cover_image ? (
+          <img alt={poi.name} className="poi-image" src={poi.cover_image} />
+        ) : (
+          <div aria-label={`${poi.name} no cover image`} className="poi-image poi-image-placeholder">
+            AIroute
+          </div>
+        )}
       </div>
       <div className="poi-card-body">
         <div className="poi-title-row">

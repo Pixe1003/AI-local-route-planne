@@ -9,6 +9,7 @@ dist/
 data/chroma/
 data/raw/
 data/processed/*.sqlite
+data/processed/amap_geocode_cache.json
 *.log
 backend/*.egg-info/
 frontend/.env.local

@@ -28,6 +28,10 @@
       EMBEDDING_API_KEY: ${EMBEDDING_API_KEY:-}
       EMBEDDING_MODEL: ${EMBEDDING_MODEL:-text-embedding-3-small}
       EMBEDDING_TIMEOUT_SECONDS: ${EMBEDDING_TIMEOUT_SECONDS:-30}
+      AMAP_KEY: ${AMAP_KEY:-}
+      AMAP_BASE_URL: ${AMAP_BASE_URL:-https://restapi.amap.com}
+      AMAP_TIMEOUT_SECONDS: ${AMAP_TIMEOUT_SECONDS:-5}
+      APP_STATE_SQLITE_PATH: /app/data/processed/app_state.sqlite
       DEFAULT_CITY: hefei
     ports:
       - "8000:8000"
@@ -41,6 +45,8 @@
       context: ./frontend
     environment:
       VITE_API_BASE_URL: /api
+      VITE_AMAP_JS_KEY: ${VITE_AMAP_JS_KEY:-}
+      VITE_AMAP_SECURITY_JS_CODE: ${VITE_AMAP_SECURITY_JS_CODE:-}
     ports:
       - "5173:5173"
     depends_on:

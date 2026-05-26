@@ -10,7 +10,11 @@ def format_hhmm(value: datetime) -> str:
 
 
 def minutes_between(start: str, end: str) -> int:
-    return int((parse_hhmm(end) - parse_hhmm(start)).total_seconds() // 60)
+    start_time = parse_hhmm(start)
+    end_time = parse_hhmm(end)
+    if end_time < start_time:
+        end_time += timedelta(days=1)
+    return int((end_time - start_time).total_seconds() // 60)
 
 
 def add_minutes(value: str, minutes: int) -> str:
