@@ -48,6 +48,8 @@ class PoiInPool(BaseModel):
     id: str
     name: str
     category: str
+    latitude: float
+    longitude: float
     rating: float
     price_per_person: Optional[int]
     cover_image: Optional[str]

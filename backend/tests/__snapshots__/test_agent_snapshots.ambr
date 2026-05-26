@@ -34,8 +34,10 @@
               'keywords': list([
                 'str',
               ]),
+              'latitude': 'float',
+              'longitude': 'float',
               'name': 'str',
-              'price_per_person': 'NoneType',
+              'price_per_person': 'int',
               'rating': 'float',
               'retrieval_provenance': list([
               ]),

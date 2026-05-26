@@ -8,7 +8,8 @@ import { createRouteChain } from "../api/route"
 import { AgentThinkingPanel } from "../components/AgentThinkingPanel"
 import { AmapRouteMap } from "../components/AmapRouteMap"
 import { useAmapRouteStore } from "../store/amapRouteStore"
-import type { RouteChainResponse } from "../types/route"
+import type { PoiInPool } from "../types/pool"
+import type { AmapRouteRequest, RouteChainResponse, RoutePoi } from "../types/route"
 
 export function AmapRoutePage() {
   const navigate = useNavigate()
@@ -70,7 +71,7 @@ export function AmapRoutePage() {
     )
     return new Map(entries)
   }, [routeRequest?.pool])
-  const orderedPois = routeResult?.ordered_pois ?? []
+  const orderedPois = routeResult?.ordered_pois ?? routePoisFromRequest(routeRequest, poolPoiById)
   const totalDistance = routeResult ? formatDistance(routeResult.total_distance_m) : "--"
   const totalDuration = routeResult ? formatDuration(routeResult.total_duration_s) : "--"
   const pageTitle = useMemo(() => {
@@ -158,7 +159,7 @@ export function AmapRoutePage() {
   return (
     <main className="amap-route-page">
       <section className="amap-route-map-area">
-        <AmapRouteMap geojson={routeResult?.geojson ?? null} pois={orderedPois} />
+        <AmapRouteMap geojson={routeResult?.geojson ?? null} mode={routeRequest.mode} pois={orderedPois} />
       </section>
       <aside className="amap-route-panel" aria-label="高德路线结果">
         <button className="secondary-button compact" onClick={() => navigate("/")} type="button">
@@ -305,4 +306,25 @@ function routeChainMatchesRequest(routeChain: RouteChainResponse, poiIds: string
   if (routeChain.mode !== mode) return false
   const routePoiIds = routeChain.ordered_pois.map(poi => poi.id)
   return routePoiIds.length === poiIds.length && routePoiIds.every((poiId, index) => poiId === poiIds[index])
+}
+
+function routePoisFromRequest(
+  routeRequest: AmapRouteRequest | null,
+  poolPoiById: Map<string, PoiInPool>
+): RoutePoi[] {
+  if (!routeRequest) return []
+  const routePois: RoutePoi[] = []
+  routeRequest.poi_ids.forEach(poiId => {
+    const poi = poolPoiById.get(poiId)
+    if (!poi) return
+    routePois.push({
+      id: poi.id,
+      name: poi.name,
+      longitude: poi.longitude,
+      latitude: poi.latitude,
+      category: poi.category,
+      cover_image: poi.cover_image ?? null
+    })
+  })
+  return routePois
 }

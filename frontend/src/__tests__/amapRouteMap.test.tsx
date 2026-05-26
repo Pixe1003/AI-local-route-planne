@@ -105,4 +105,60 @@ describe("AmapRouteMap", () => {
     ])
     expect(fakeMap.setFitView).toHaveBeenCalledWith(overlays)
   })
+
+  it("uses JSAPI route planners for local POI road rendering when plugins are available", async () => {
+    const fakeMap = {
+      add: vi.fn(),
+      destroy: vi.fn(),
+      setFitView: vi.fn()
+    }
+    const markerOptions: unknown[] = []
+    const drivingSearches: unknown[] = []
+    const markerOverlays = [{ setMap: vi.fn() }, { setMap: vi.fn() }]
+    const drivingPlanner = {
+      clear: vi.fn(),
+      search: vi.fn((from, to, callback) => {
+        drivingSearches.push({ from, to })
+        callback("complete", {})
+      })
+    }
+
+    const AMap = {
+      Map: vi.fn(function () {
+        return fakeMap
+      }),
+      Marker: vi.fn(function (options: unknown) {
+        markerOptions.push(options)
+        return markerOverlays[markerOptions.length - 1]
+      }),
+      Polyline: vi.fn(),
+      Driving: vi.fn(function () {
+        return drivingPlanner
+      })
+    }
+    vi.stubGlobal("AMap", AMap)
+    loadAmap.mockResolvedValue(AMap)
+
+    const pois: RoutePoi[] = [
+      { id: "hf_poi_1", name: "合肥 POI 1", longitude: 117.22, latitude: 31.82 },
+      { id: "hf_poi_2", name: "合肥 POI 2", longitude: 117.23, latitude: 31.83 }
+    ]
+
+    render(<AmapRouteMap geojson={null} mode="driving" pois={pois} />)
+
+    await waitFor(() => {
+      expect(AMap.Driving).toHaveBeenCalledWith({
+        map: fakeMap,
+        hideMarkers: true,
+        autoFitView: false
+      })
+    })
+    expect(drivingSearches).toEqual([
+      {
+        from: [117.22, 31.82],
+        to: [117.23, 31.83]
+      }
+    ])
+    expect(AMap.Polyline).not.toHaveBeenCalled()
+  })
 })

@@ -34,6 +34,8 @@ export interface PoiInPool {
   id: string
   name: string
   category: string
+  latitude: number
+  longitude: number
   rating: number
   price_per_person?: number | null
   cover_image?: string | null

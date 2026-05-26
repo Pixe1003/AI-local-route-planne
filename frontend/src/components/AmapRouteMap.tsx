@@ -1,19 +1,28 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 
-import { loadAmap, type AMapMapInstance, type AMapOverlayInstance } from "../utils/loadAmap"
-import type { GeoJSONFeatureCollection, RoutePoi } from "../types/route"
+import {
+  loadAmap,
+  type AMapMapInstance,
+  type AMapNamespace,
+  type AMapOverlayInstance,
+  type AMapRoutePlannerInstance
+} from "../utils/loadAmap"
+import type { GeoJSONFeatureCollection, RouteMode, RoutePoi } from "../types/route"
 
 interface AmapRouteMapProps {
   pois: RoutePoi[]
   geojson: GeoJSONFeatureCollection | null
+  mode?: RouteMode
 }
 
 const HEFEI_CENTER: [number, number] = [117.2272, 31.8206]
 
-export function AmapRouteMap({ pois, geojson }: AmapRouteMapProps) {
+export function AmapRouteMap({ pois, geojson, mode = "driving" }: AmapRouteMapProps) {
   const containerRef = useRef<HTMLDivElement | null>(null)
   const mapRef = useRef<AMapMapInstance | null>(null)
   const overlaysRef = useRef<AMapOverlayInstance[]>([])
+  const plannersRef = useRef<AMapRoutePlannerInstance[]>([])
+  const amapRef = useRef<AMapNamespace | null>(null)
   const [status, setStatus] = useState<"idle" | "loading" | "ready" | "error">("idle")
   const [error, setError] = useState<string | null>(null)
   const jsKey = import.meta.env.VITE_AMAP_JS_KEY
@@ -40,6 +49,7 @@ export function AmapRouteMap({ pois, geojson }: AmapRouteMapProps) {
           zoom: 12,
           viewMode: "2D"
         })
+        amapRef.current = AMap
         mapRef.current = map
         const markReady = () => {
           if (!cancelled) setStatus("ready")
@@ -60,20 +70,26 @@ export function AmapRouteMap({ pois, geojson }: AmapRouteMapProps) {
       cancelled = true
       overlaysRef.current.forEach(overlay => overlay.setMap(null))
       overlaysRef.current = []
+      plannersRef.current.forEach(planner => planner.clear?.())
+      plannersRef.current = []
+      amapRef.current = null
       mapRef.current?.destroy()
       mapRef.current = null
     }
   }, [center, jsKey, securityJsCode])
 
   useEffect(() => {
-    if (status !== "ready" || !mapRef.current || !window.AMap) return
+    if (status !== "ready" || !mapRef.current || !amapRef.current) return
 
     overlaysRef.current.forEach(overlay => overlay.setMap(null))
+    plannersRef.current.forEach(planner => planner.clear?.())
     const overlays: AMapOverlayInstance[] = []
+    const planners: AMapRoutePlannerInstance[] = []
     const map = mapRef.current
+    const AMap = amapRef.current
     pois.forEach((poi, index) => {
       overlays.push(
-        new window.AMap!.Marker({
+        new AMap.Marker({
           map,
           position: [poi.longitude, poi.latitude],
           title: poi.name,
@@ -82,24 +98,19 @@ export function AmapRouteMap({ pois, geojson }: AmapRouteMapProps) {
         })
       )
     })
-    routePaths(geojson).forEach(path => {
-      overlays.push(
-        new window.AMap!.Polyline({
-          map,
-          path,
-          strokeColor: "#0b6bff",
-          strokeOpacity: 0.95,
-          strokeWeight: 8,
-          lineJoin: "round",
-          zIndex: 80
-        })
-      )
-    })
+    if (pois.length >= 2 && renderJsapiRouteSegments({ AMap, map, mode, pois, overlays, planners })) {
+      plannersRef.current = planners
+    } else {
+      routePaths(geojson, pois).forEach(path => {
+        overlays.push(routePolyline(AMap, map, path))
+      })
+      plannersRef.current = []
+    }
     overlaysRef.current = overlays
     if (overlays.length) {
       map.setFitView(overlays)
     }
-  }, [geojson, pois, status])
+  }, [geojson, mode, pois, status])
 
   if (!jsKey || !securityJsCode) {
     return (
@@ -123,8 +134,40 @@ export function AmapRouteMap({ pois, geojson }: AmapRouteMapProps) {
   )
 }
 
-function routePaths(geojson: GeoJSONFeatureCollection | null): [number, number][][] {
-  if (!geojson?.features.length) return []
+function renderJsapiRouteSegments({
+  AMap,
+  map,
+  mode,
+  pois,
+  overlays,
+  planners
+}: {
+  AMap: AMapNamespace
+  map: AMapMapInstance
+  mode: RouteMode
+  pois: RoutePoi[]
+  overlays: AMapOverlayInstance[]
+  planners: AMapRoutePlannerInstance[]
+}) {
+  const Planner = mode === "walking" ? AMap.Walking : AMap.Driving
+  if (!Planner) return false
+
+  pairwise(pois).forEach(([fromPoi, toPoi]) => {
+    const origin: [number, number] = [fromPoi.longitude, fromPoi.latitude]
+    const destination: [number, number] = [toPoi.longitude, toPoi.latitude]
+    const planner = new Planner({ map, hideMarkers: true, autoFitView: false })
+    planners.push(planner)
+    planner.search(origin, destination, status => {
+      if (status !== "complete") {
+        overlays.push(routePolyline(AMap, map, [origin, destination]))
+      }
+    })
+  })
+  return true
+}
+
+function routePaths(geojson: GeoJSONFeatureCollection | null, pois: RoutePoi[]): [number, number][][] {
+  if (!geojson?.features.length) return straightRoutePaths(pois)
   const bySegment = new Map<number, [number, number][]>()
   geojson.features.forEach(feature => {
     const coordinates = feature.geometry.coordinates
@@ -139,7 +182,31 @@ function routePaths(geojson: GeoJSONFeatureCollection | null): [number, number][
     })
     bySegment.set(segmentIndex, path)
   })
-  return Array.from(bySegment.values()).filter(path => path.length >= 2)
+  const paths = Array.from(bySegment.values()).filter(path => path.length >= 2)
+  return paths.length ? paths : straightRoutePaths(pois)
+}
+
+function straightRoutePaths(pois: RoutePoi[]): [number, number][][] {
+  return pairwise(pois).map(([fromPoi, toPoi]) => [
+    [fromPoi.longitude, fromPoi.latitude],
+    [toPoi.longitude, toPoi.latitude]
+  ])
+}
+
+function routePolyline(AMap: AMapNamespace, map: AMapMapInstance, path: [number, number][]) {
+  return new AMap.Polyline({
+    map,
+    path,
+    strokeColor: "#0b6bff",
+    strokeOpacity: 0.95,
+    strokeWeight: 8,
+    lineJoin: "round",
+    zIndex: 80
+  })
+}
+
+function pairwise(pois: RoutePoi[]): Array<[RoutePoi, RoutePoi]> {
+  return pois.slice(0, -1).map((poi, index) => [poi, pois[index + 1]])
 }
 
 function escapeHtml(value: string): string {

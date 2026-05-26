@@ -323,6 +323,8 @@ describe("AmapRoutePage", () => {
                 id: "sh_poi_001",
                 name: "外滩",
                 category: "scenic",
+                latitude: 31.24,
+                longitude: 121.49,
                 rating: 4.8,
                 price_per_person: null,
                 cover_image: null,

@@ -33,20 +33,37 @@ type AMapPolylineOptions = {
   zIndex?: number
 }
 
+type AMapRoutePlannerOptions = {
+  autoFitView?: boolean
+  hideMarkers?: boolean
+  map?: AMapMapInstance
+}
+
 export type AMapMarkerInstance = AMapOverlayInstance & {
   on: (eventName: "click", handler: () => void) => void
 }
 
 export type AMapPolylineInstance = AMapOverlayInstance
+export type AMapRoutePlannerInstance = {
+  clear?: () => void
+  search: (
+    origin: [number, number],
+    destination: [number, number],
+    callback?: (status: string, result: unknown) => void
+  ) => void
+}
 
 type AMapMarkerConstructor = new (options: AMapMarkerOptions) => AMapMarkerInstance
 type AMapPolylineConstructor = new (options: AMapPolylineOptions) => AMapPolylineInstance
 type AMapMapConstructor = new (container: HTMLElement, options: AMapMapOptions) => AMapMapInstance
+type AMapRoutePlannerConstructor = new (options: AMapRoutePlannerOptions) => AMapRoutePlannerInstance
 
 export type AMapNamespace = {
+  Driving?: AMapRoutePlannerConstructor
   Map: AMapMapConstructor
   Marker: AMapMarkerConstructor
   Polyline: AMapPolylineConstructor
+  Walking?: AMapRoutePlannerConstructor
 }
 
 declare global {
@@ -90,7 +107,8 @@ export function loadAmap(jsKey: string, securityJsCode: string): Promise<AMapNam
     const script = document.createElement("script")
     script.id = AMAP_SCRIPT_ID
     script.async = true
-    script.src = `https://webapi.amap.com/maps?v=2.0&key=${encodeURIComponent(jsKey)}`
+    const plugins = encodeURIComponent("AMap.Driving,AMap.Walking,AMap.Scale,AMap.ToolBar")
+    script.src = `https://webapi.amap.com/maps?v=2.0&key=${encodeURIComponent(jsKey)}&plugin=${plugins}`
     script.onload = () => {
       if (window.AMap) resolve(window.AMap)
       else reject(new Error("AMap script loaded but window.AMap is unavailable."))
