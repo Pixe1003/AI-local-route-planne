@@ -105,3 +105,41 @@ def test_optw_reports_fallback_when_hard_constraints_are_infeasible() -> None:
     assert result.ordered_ids == ["must"]
     assert "infeasible_constraints" in result.constraint_violations
     assert result.fallback_used is True
+
+
+def test_greedy_fallback_allows_waiting_for_opening_window() -> None:
+    nodes = [
+        OptwNode(
+            poi_id="late_restaurant",
+            category="restaurant",
+            utility=10,
+            visit_min=30,
+            price=20,
+            open_min=600,
+            close_min=720,
+        ),
+        OptwNode(
+            poi_id="museum",
+            category="culture",
+            utility=8,
+            visit_min=30,
+            price=10,
+            open_min=540,
+            close_min=720,
+        ),
+    ]
+
+    result = solve_optw(
+        nodes,
+        {("late_restaurant", "museum"): 10},
+        start_min=570,
+        end_min=720,
+        budget=40,
+        required_categories={"restaurant"},
+        max_stops=2,
+        solver_mode="greedy",
+    )
+
+    assert result.ordered_ids == ["late_restaurant", "museum"]
+    assert result.total_duration_min == 100
+    assert result.constraint_violations == ["greedy_mode"]

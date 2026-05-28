@@ -327,7 +327,8 @@ def _order_satisfies(
     for node in ordered:
         if previous is not None:
             current += _travel(previous.poi_id, node.poi_id, travel_minutes)
-        if current < node.open_min or current + node.visit_min > node.close_min:
+        current = max(current, node.open_min)
+        if current + node.visit_min > node.close_min:
             return False
         current += node.visit_min
     return current <= end_min
@@ -479,7 +480,9 @@ def _duration(
     for poi_id in ordered_ids:
         if previous_id is not None:
             current += _travel(previous_id, poi_id, travel_minutes)
-        current += by_id[poi_id].visit_min
+        node = by_id[poi_id]
+        current = max(current, node.open_min)
+        current += node.visit_min
         previous_id = poi_id
     return current - start_min
 

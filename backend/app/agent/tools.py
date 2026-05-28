@@ -580,7 +580,7 @@ def _story_route_skeleton(state: AgentState) -> RouteSkeleton:
     for index, poi_id in enumerate(poi_ids):
         poi = poi_by_id.get(poi_id)
         dwell = _story_dwell_minutes(state, poi_id, poi)
-        arrival = current_time
+        arrival = _wait_until_open(current_time, poi, state.context.date)
         departure = add_minutes(arrival, dwell)
         transport = None
         if index < len(poi_ids) - 1:
@@ -622,6 +622,21 @@ def _story_route_skeleton(state: AgentState) -> RouteSkeleton:
             queue_total_min=queue_total,
         ),
     )
+
+
+def _wait_until_open(current_time: str, poi: Any | None, date_value: str) -> str:
+    if poi is None:
+        return current_time
+    current_min = _hhmm_to_min(current_time)
+    open_min, _ = _opening_window(
+        poi,
+        _weekday_name(date_value),
+        current_min,
+        _hhmm_to_min("23:59"),
+    )
+    if open_min > current_min:
+        return add_minutes("00:00", open_min)
+    return current_time
 
 
 def _story_dwell_minutes(state: AgentState, poi_id: str, poi: Any | None) -> int:

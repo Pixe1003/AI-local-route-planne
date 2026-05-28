@@ -3,6 +3,7 @@ from types import SimpleNamespace
 
 from app.agent.conductor import Conductor
 from app.agent.state import AgentGoal, AgentState
+from app.agent.story_models import StoryPlan, StoryStop
 from app.agent.tools import get_tool_registry
 from app.schemas.onboarding import UserNeedProfile
 from app.schemas.plan import HardConstraints, PlanContext, SoftPreferences, StructuredIntent
@@ -177,3 +178,87 @@ def test_solve_constrained_route_tool_rewrites_pool_selection_and_records_optimi
     assert pool.default_selected_ids == ["restaurant", "museum", "cafe"]
     assert result.memory_patch["route_optimization"]["constraint_violations"] == []
     assert result.next_phase == "COMPOSING"
+
+
+def test_validate_route_waits_until_poi_opens(monkeypatch) -> None:
+    repo = {
+        "restaurant": SimpleNamespace(
+            id="restaurant",
+            name="Local Food",
+            category="restaurant",
+            visit_duration=20,
+            price_per_person=20,
+            queue_estimate={"weekend_peak": 10},
+            open_hours={"tuesday": [{"open": "10:00", "close": "18:00"}]},
+        ),
+        "museum": SimpleNamespace(
+            id="museum",
+            name="Museum",
+            category="culture",
+            visit_duration=20,
+            price_per_person=10,
+            queue_estimate={"weekend_peak": 10},
+            open_hours={"tuesday": [{"open": "09:00", "close": "18:00"}]},
+        ),
+        "cafe": SimpleNamespace(
+            id="cafe",
+            name="Cafe",
+            category="cafe",
+            visit_duration=20,
+            price_per_person=10,
+            queue_estimate={"weekend_peak": 10},
+            open_hours={"tuesday": [{"open": "09:00", "close": "18:00"}]},
+        ),
+    }
+
+    class FakeRepo:
+        def get_many(self, poi_ids):
+            return [repo[poi_id] for poi_id in poi_ids if poi_id in repo]
+
+        def list_by_city(self, city):
+            return list(repo.values())
+
+    fake_repo = FakeRepo()
+    monkeypatch.setattr("app.agent.tools.get_poi_repository", lambda: fake_repo)
+    monkeypatch.setattr("app.services.route_validator.get_poi_repository", lambda: fake_repo)
+    state = _state()
+    state.context.time_window.start = "09:30"
+    state.context.time_window.end = "12:00"
+    state.memory.intent.hard_constraints.start_time = "09:30"
+    state.memory.intent.hard_constraints.end_time = "12:00"
+    state.memory.intent.hard_constraints.budget_total = 50
+    state.memory.story_plan = StoryPlan(
+        theme="Opening Window",
+        narrative="A compact route.",
+        stops=[
+            StoryStop(
+                poi_id="restaurant",
+                role="opener",
+                why="restaurant stop",
+                ugc_quote_ref="pool:restaurant",
+                ugc_quote="restaurant",
+                suggested_dwell_min=20,
+            ),
+            StoryStop(
+                poi_id="museum",
+                role="midway",
+                why="culture stop",
+                ugc_quote_ref="pool:museum",
+                ugc_quote="museum",
+                suggested_dwell_min=20,
+            ),
+            StoryStop(
+                poi_id="cafe",
+                role="closer",
+                why="cafe stop",
+                ugc_quote_ref="pool:cafe",
+                ugc_quote="cafe",
+                suggested_dwell_min=20,
+            ),
+        ],
+    )
+
+    result = get_tool_registry().execute("validate_route", state, {})
+
+    assert result.payload.is_valid is True
+    assert [issue.code for issue in result.payload.issues] == []

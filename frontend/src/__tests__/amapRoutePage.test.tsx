@@ -388,4 +388,56 @@ describe("AmapRoutePage", () => {
     expect(screen.getByText("在编排路线")).toBeInTheDocument()
     expect(screen.getByText("最后审稿")).toBeInTheDocument()
   })
+
+  it("highlights only the selected Pareto variant when labels repeat", async () => {
+    useAmapRouteStore.getState().setRouteRequest({
+      mode: "driving",
+      poi_ids: ["sh_poi_001", "sh_poi_002"],
+      source: "ugc_instant_route",
+      free_text: "quiet route",
+      route_chain: routeResult,
+      route_variants: [
+        {
+          label: "frontier",
+          ordered_ids: ["sh_poi_001", "sh_poi_002"],
+          solver: "exact",
+          interest: 100,
+          time_min: 60,
+          cost: 80,
+          queue_min: 20,
+          metrics: { interest: 100, time: 60, cost: 80, queue: 20 },
+          objective_value: 100,
+          non_dominated: true
+        },
+        {
+          label: "frontier",
+          ordered_ids: ["sh_poi_002", "sh_poi_003"],
+          solver: "exact",
+          interest: 90,
+          time_min: 45,
+          cost: 60,
+          queue_min: 10,
+          metrics: { interest: 90, time: 45, cost: 60, queue: 10 },
+          objective_value: 90,
+          non_dominated: true
+        }
+      ]
+    })
+
+    const { container } = render(
+      <MemoryRouter>
+        <AmapRoutePage />
+      </MemoryRouter>
+    )
+
+    expect(await screen.findByText("1.5 km")).toBeInTheDocument()
+    expect(container.querySelectorAll(".route-variant-card.active")).toHaveLength(1)
+    const variantButtons = container.querySelectorAll(".route-variant-button")
+
+    fireEvent.click(variantButtons[1])
+
+    const cards = container.querySelectorAll(".route-variant-card")
+    expect(container.querySelectorAll(".route-variant-card.active")).toHaveLength(1)
+    expect(cards[1]).toHaveClass("active")
+  })
 })

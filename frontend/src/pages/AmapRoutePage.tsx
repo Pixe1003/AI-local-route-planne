@@ -63,15 +63,14 @@ export function AmapRoutePage() {
 
   const robustness = routeRequest?.robustness ?? null
   const routeVariants = routeRequest?.route_variants ?? []
-  const [selectedVariantLabel, setSelectedVariantLabel] = useState<string | null>(null)
-  const activeVariant = useMemo(() => {
-    if (!routeVariants.length) return null
-    if (selectedVariantLabel) {
-      const match = routeVariants.find(variant => variant.label === selectedVariantLabel)
-      if (match) return match
-    }
-    return routeVariants[0]
-  }, [routeVariants, selectedVariantLabel])
+  const [selectedVariantIndex, setSelectedVariantIndex] = useState(0)
+  useEffect(() => {
+    setSelectedVariantIndex(0)
+  }, [routeVariants])
+  const activeVariantIndex = routeVariants.length
+    ? Math.min(selectedVariantIndex, routeVariants.length - 1)
+    : -1
+  const activeVariant = activeVariantIndex >= 0 ? routeVariants[activeVariantIndex] : null
   const storyPlan = routeRequest?.story_plan ?? null
   const storyByPoiId = useMemo(
     () => new Map((storyPlan?.stops ?? []).map(stop => [stop.poi_id, stop])),
@@ -246,7 +245,7 @@ export function AmapRoutePage() {
             </p>
             <ul className="route-variants-list">
               {routeVariants.map((variant, index) => {
-                const isActive = activeVariant?.label === variant.label
+                const isActive = activeVariantIndex === index
                 const reference = activeVariant
                 const diff = reference && reference !== variant
                   ? describeVariantDiff(variant, reference)
@@ -259,7 +258,7 @@ export function AmapRoutePage() {
                   >
                     <button
                       className="route-variant-button"
-                      onClick={() => setSelectedVariantLabel(variant.label)}
+                      onClick={() => setSelectedVariantIndex(index)}
                       type="button"
                     >
                       <header>
