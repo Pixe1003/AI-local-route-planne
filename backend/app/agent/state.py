@@ -56,6 +56,9 @@ class AgentMemory(BaseModel):
     story_retry_count: int = 0
     feedback_intent: dict[str, Any] | None = None
     feedback_applied: bool = False
+    route_optimization: dict[str, Any] | None = None
+    route_variants: list[dict[str, Any]] = Field(default_factory=list)
+    robustness: dict[str, Any] | None = None
     episodic_summary: list[SessionSummary] = Field(default_factory=list)
     user_facts: UserFacts | None = None
     similar_sessions: list[SimilarSessionHit] = Field(default_factory=list)

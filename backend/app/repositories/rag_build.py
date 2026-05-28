@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import Iterable
+from typing import Iterable, cast
 
 import numpy as np
 
@@ -147,4 +147,4 @@ def _meta_row(document: RagDocument, faiss_id: int) -> dict:
 def _normalize_rows(values: np.ndarray) -> np.ndarray:
     norms = np.linalg.norm(values, axis=1, keepdims=True)
     norms[norms == 0] = 1.0
-    return values / norms
+    return cast(np.ndarray, values / norms)

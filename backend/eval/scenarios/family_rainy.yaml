@@ -1,0 +1,10 @@
+id: family_rainy
+request:
+  user_id: eval_user
+  free_text: "rainy day family route, prefer indoor culture, cafes, shopping and easy pacing"
+  city: hefei
+  date: "2026-05-26"
+  time_window:
+    start: "13:00"
+    end: "19:00"
+  budget_per_person: 180

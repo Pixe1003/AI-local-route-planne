@@ -1,5 +1,6 @@
 import asyncio
 import json
+from typing import Any
 from uuid import uuid4
 
 from fastapi import APIRouter, HTTPException
@@ -60,6 +61,9 @@ class AgentRunResponse(BaseModel):
     story_plan: StoryPlan | None = None
     validation: ValidationResult | None = None
     critique: Critique | None = None
+    route_optimization: dict[str, Any] | None = None
+    route_variants: list[dict[str, Any]] = Field(default_factory=list)
+    robustness: dict[str, Any] | None = None
     steps: list[ToolCall] = Field(default_factory=list)
 
 
@@ -207,6 +211,7 @@ def build_adjust_state(parent: AgentState, request: AgentAdjustRequest) -> Agent
     state.trace_id = uuid4().hex
     state.memory.route_chain = None
     state.memory.validation = None
+    state.memory.robustness = None
     state.memory.critique = None
     state.memory.feedback_intent = None
     state.memory.feedback_applied = False
@@ -290,5 +295,8 @@ def _response_from_state(state: AgentState) -> AgentRunResponse:
         story_plan=state.memory.story_plan,
         validation=state.memory.validation,
         critique=state.memory.critique,
+        route_optimization=state.memory.route_optimization,
+        route_variants=state.memory.route_variants,
+        robustness=state.memory.robustness,
         steps=state.steps,
     )

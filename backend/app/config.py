@@ -38,6 +38,9 @@ class Settings(BaseSettings):
     otel_service_name: str = "airoute-agent"
     otel_exporter_otlp_endpoint: str = ""
     redis_url: str = ""
+    route_solver: str = "optw"
+    ranker_enabled: bool = True
+    ranker_model_path: str = "data/models/ranker.txt"
 
     model_config = SettingsConfigDict(
         env_file=(PROJECT_ROOT / ".env", BACKEND_ROOT / ".env"),

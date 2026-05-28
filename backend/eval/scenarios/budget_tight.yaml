@@ -1,0 +1,10 @@
+id: budget_tight
+request:
+  user_id: eval_user
+  free_text: "budget friendly half day route with local food and no expensive stops"
+  city: hefei
+  date: "2026-05-26"
+  time_window:
+    start: "10:00"
+    end: "15:00"
+  budget_per_person: 80

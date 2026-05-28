@@ -291,7 +291,10 @@ class StoryAgent:
 
     def _why(self, item: CandidateEvidence, index: int) -> str:
         role = self.ROLES[min(index, len(self.ROLES) - 1)]
-        return f"{item.poi_name} works as the {role}; UGC evidence: {item.quote}"
+        return (
+            f"{item.poi_name} works as the {role} {item.category} stop; "
+            f"UGC evidence: {item.quote}"
+        )
 
     def _theme(self, selected: list[CandidateEvidence], state: Any) -> str:
         if not selected:

@@ -75,6 +75,22 @@ GET_AMAP_CHAIN = {
     },
 }
 
+SOLVE_CONSTRAINED_ROUTE = {
+    "name": "solve_constrained_route",
+    "description": (
+        "Select and order POIs with a constrained route optimizer using candidate pool and "
+        "parsed intent from memory. The LLM may only tune solver controls."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "max_stops": {"type": "integer", "minimum": 1, "maximum": 8},
+            "solver_mode": {"type": "string", "enum": ["optw", "greedy"]},
+            "time_limit_seconds": {"type": "number", "minimum": 0.1, "maximum": 10},
+        },
+    },
+}
+
 PARSE_FEEDBACK = {
     "name": "parse_feedback",
     "description": "Parse route adjustment feedback into slot deltas such as target stop, category hint, and budget.",
@@ -99,6 +115,18 @@ VALIDATE_ROUTE = {
     "parameters": {"type": "object", "properties": {}},
 }
 
+ASSESS_ROBUSTNESS = {
+    "name": "assess_robustness",
+    "description": "Run a Monte Carlo robustness check after validation and before final critique.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "samples": {"type": "integer", "minimum": 50, "maximum": 2000},
+            "seed": {"type": "integer"},
+        },
+    },
+}
+
 CRITIQUE = {
     "name": "critique",
     "description": "Review the story route for coherence, evidence grounding, pacing, and feasibility.",
@@ -117,11 +145,13 @@ TOOL_SCHEMAS = [
     SEARCH_UGC_EVIDENCE,
     RECALL_SIMILAR_SESSIONS,
     RECOMMEND_POOL,
+    SOLVE_CONSTRAINED_ROUTE,
     COMPOSE_STORY,
     GET_AMAP_CHAIN,
     PARSE_FEEDBACK,
     REPLAN_BY_EVENT,
     VALIDATE_ROUTE,
+    ASSESS_ROBUSTNESS,
     CRITIQUE,
     FINISH,
 ]

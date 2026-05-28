@@ -1,5 +1,6 @@
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import date as date_type
 from typing import Any
 
 from pydantic import BaseModel, Field
@@ -9,7 +10,7 @@ from app.agent.state import AgentPhase, AgentState
 from app.agent.specialists.critic import Critic
 from app.agent.specialists.repair_agent import RepairAgent
 from app.agent.specialists.story_agent import StoryAgent
-from app.agent.story_models import StoryStop
+from app.agent.story_models import RobustnessSummary, RouteOptimizationSummary, StoryStop
 from app.api import routes_route
 from app.repositories.ugc_vector_repo import get_ugc_vector_repo
 from app.repositories.poi_repo import get_poi_repository
@@ -25,9 +26,13 @@ from app.schemas.plan import (
 from app.schemas.pool import PoolRequest
 from app.schemas.route import RouteChainRequest
 from app.services.amap.schemas import AmapRouteMode
+from app.services.category_policy import EXPERIENCE_CATEGORIES
 from app.services.pool_service import PoolService
 from app.services.route_validator import RouteValidator
 from app.solver.distance import haversine_meters
+from app.solver.optw import OptwNode, solve_optw
+from app.solver.pareto import build_pareto_variants
+from app.sim.montecarlo import simulate
 from app.utils.time_utils import add_minutes, minutes_between
 
 
@@ -66,11 +71,13 @@ def get_tool_registry() -> ToolRegistry:
             Tool("search_ugc_evidence", tool_schemas.SEARCH_UGC_EVIDENCE, _search_ugc_evidence),
             Tool("recall_similar_sessions", tool_schemas.RECALL_SIMILAR_SESSIONS, _recall_similar_sessions),
             Tool("recommend_pool", tool_schemas.RECOMMEND_POOL, _recommend_pool),
+            Tool("solve_constrained_route", tool_schemas.SOLVE_CONSTRAINED_ROUTE, _solve_constrained_route),
             Tool("compose_story", tool_schemas.COMPOSE_STORY, _compose_story),
             Tool("get_amap_chain", tool_schemas.GET_AMAP_CHAIN, _get_amap_chain),
             Tool("parse_feedback", tool_schemas.PARSE_FEEDBACK, _parse_feedback),
             Tool("replan_by_event", tool_schemas.REPLAN_BY_EVENT, _replan_by_event),
             Tool("validate_route", tool_schemas.VALIDATE_ROUTE, _validate_route),
+            Tool("assess_robustness", tool_schemas.ASSESS_ROBUSTNESS, _assess_robustness),
             Tool("critique", tool_schemas.CRITIQUE, _critique),
         ]
     )
@@ -198,9 +205,128 @@ def _recommend_pool(state: AgentState, args: dict[str, Any]) -> ToolResult:
     )
 
 
+def _solve_constrained_route(state: AgentState, args: dict[str, Any]) -> ToolResult:
+    if state.memory.pool is None or state.memory.intent is None:
+        return ToolResult(
+            observation_summary="Skipped constrained route solving because pool or intent is missing.",
+            memory_patch={
+                "route_optimization": {
+                    "solver": "skipped",
+                    "objective_value": 0,
+                    "selected_utility": 0,
+                    "constraint_violations": ["missing_pool_or_intent"],
+                    "optimality_gap": None,
+                    "fallback_used": True,
+                }
+            },
+            next_phase="COMPOSING",
+        )
+
+    pool = state.memory.pool.model_copy(deep=True)
+    max_stops = int(args.get("max_stops") or 5)
+    solver_mode = str(args.get("solver_mode") or "optw")
+    time_limit_seconds = float(args.get("time_limit_seconds") or 3)
+    pool_pois = [poi for category in pool.categories for poi in category.pois]
+    pool_by_id = {poi.id: poi for poi in pool_pois}
+    candidate_ids = list(pool_by_id)
+    repo_pois = get_poi_repository().get_many(candidate_ids)
+    repo_by_id = {poi.id: poi for poi in repo_pois}
+    start_min = _hhmm_to_min(state.memory.intent.hard_constraints.start_time)
+    end_min = _hhmm_to_min(state.memory.intent.hard_constraints.end_time)
+    weekday = _weekday_name(state.context.date)
+    travel = _travel_matrix(repo_by_id, candidate_ids)
+
+    nodes: list[OptwNode] = []
+    for poi_id in candidate_ids:
+        pool_poi = pool_by_id[poi_id]
+        repo_poi = repo_by_id.get(poi_id)
+        open_min, close_min = _opening_window(repo_poi, weekday, start_min, end_min)
+        queue_min = int(
+            pool_poi.estimated_queue_min
+            or ((getattr(repo_poi, "queue_estimate", {}) or {}).get("weekend_peak", 0) if repo_poi else 0)
+            or 0
+        )
+        nodes.append(
+            OptwNode(
+                poi_id=poi_id,
+                category=pool_poi.category,
+                utility=float(pool_poi.suitable_score or 0) * 100,
+                visit_min=int(getattr(repo_poi, "visit_duration", 40) or 40),
+                price=int(pool_poi.price_per_person or getattr(repo_poi, "price_per_person", 0) or 0),
+                open_min=open_min,
+                close_min=close_min,
+                queue_min=queue_min,
+            )
+        )
+
+    required_categories: set[str] = set()
+    required_groups: list[set[str]] = []
+    intent = state.memory.intent
+    if intent.hard_constraints.must_include_meal:
+        required_categories.add("restaurant")
+    if intent.hard_constraints.must_include_experience:
+        required_groups.append(set(EXPERIENCE_CATEGORIES))
+
+    result = solve_optw(
+        nodes,
+        travel,
+        start_min=start_min,
+        end_min=end_min,
+        budget=intent.hard_constraints.budget_total,
+        must_visit=set(intent.must_visit_pois),
+        required_categories=required_categories,
+        required_category_groups=required_groups,
+        max_stops=max_stops,
+        time_limit_seconds=time_limit_seconds,
+        solver_mode=solver_mode,
+    )
+    route_variants = [
+        variant.to_dict()
+        for variant in build_pareto_variants(
+            _variant_candidate_nodes(nodes, result.ordered_ids),
+            travel,
+            solve_kwargs={
+                "start_min": start_min,
+                "end_min": end_min,
+                "budget": intent.hard_constraints.budget_total,
+                "must_visit": set(intent.must_visit_pois),
+                "required_categories": required_categories,
+                "required_category_groups": required_groups,
+                "max_stops": max_stops,
+                "time_limit_seconds": time_limit_seconds,
+                "solver_mode": solver_mode,
+            },
+        )
+    ]
+
+    if result.ordered_ids:
+        pool.default_selected_ids = result.ordered_ids
+    optimization = {
+        "solver": result.solver,
+        "objective_value": result.objective_value,
+        "selected_utility": result.selected_utility,
+        "constraint_violations": result.constraint_violations,
+        "optimality_gap": result.optimality_gap,
+        "fallback_used": result.fallback_used,
+    }
+    return ToolResult(
+        observation_summary=(
+            f"Solved constrained route with {result.solver}; "
+            f"selected={len(result.ordered_ids)} utility={round(result.selected_utility, 2)}."
+        ),
+        payload=result.__dict__,
+        memory_patch={"pool": pool, "route_optimization": optimization, "route_variants": route_variants},
+        next_phase="COMPOSING",
+    )
+
+
 def _compose_story(state: AgentState, args: dict[str, Any]) -> ToolResult:
     agent = StoryAgent()
     story = agent.compose(state)
+    if state.memory.route_optimization and story.optimization is None:
+        story.optimization = RouteOptimizationSummary.model_validate(state.memory.route_optimization)
+    if state.memory.robustness and story.robustness is None:
+        story.robustness = RobustnessSummary.model_validate(state.memory.robustness)
     return ToolResult(
         observation_summary=(
             f"Composed story route '{story.theme}' with {len(story.stops)} stops "
@@ -282,6 +408,7 @@ def _replan_by_event(state: AgentState, args: dict[str, Any]) -> ToolResult:
             "story_plan": updated,
             "route_chain": None,
             "validation": None,
+            "robustness": None,
             "critique": None,
             "feedback_intent": feedback,
             "feedback_applied": True,
@@ -344,6 +471,40 @@ def _validate_route(state: AgentState, args: dict[str, Any]) -> ToolResult:
     )
 
 
+def _assess_robustness(state: AgentState, args: dict[str, Any]) -> ToolResult:
+    route = _story_route_skeleton(state)
+    poi_ids = [stop.poi_id for stop in route.stops]
+    repo = get_poi_repository()
+    queue_by_id = {
+        poi.id: int((getattr(poi, "queue_estimate", {}) or {}).get("weekend_peak", 0) or 0)
+        for poi in repo.get_many(poi_ids)
+    }
+    samples = int(args.get("samples") or 500)
+    seed = int(args.get("seed") or 42)
+    summary = simulate(
+        route,
+        queue_by_id,
+        end_min=_hhmm_to_min(state.context.time_window.end),
+        n=samples,
+        seed=seed,
+    )
+    story_patch = state.memory.story_plan.model_copy(deep=True) if state.memory.story_plan else None
+    if story_patch is not None:
+        story_patch.robustness = summary
+    return ToolResult(
+        observation_summary=(
+            f"Assessed route robustness: on_time_prob={summary.on_time_prob}, "
+            f"p90_total_min={summary.p90_total_min}."
+        ),
+        payload=summary,
+        memory_patch={
+            "robustness": summary.model_dump(),
+            **({"story_plan": story_patch} if story_patch is not None else {}),
+        },
+        next_phase="CHECKING",
+    )
+
+
 def _critique(state: AgentState, args: dict[str, Any]) -> ToolResult:
     critique = Critic().review(state)
     if (
@@ -361,6 +522,7 @@ def _critique(state: AgentState, args: dict[str, Any]) -> ToolResult:
                 "story_plan": compacted,
                 "route_chain": None,
                 "validation": None,
+                "robustness": None,
                 "critique": None,
                 "story_retry_count": state.memory.story_retry_count + 1,
             },
@@ -381,6 +543,7 @@ def _critique(state: AgentState, args: dict[str, Any]) -> ToolResult:
                 "story_plan": None,
                 "route_chain": None,
                 "validation": None,
+                "robustness": None,
                 "critique": None,
                 "story_retry_count": state.memory.story_retry_count + 1,
             },
@@ -562,6 +725,67 @@ def _compact_route_ids(
     if len(selected) >= 3:
         return selected
     return ids[: min(max_stops, len(ids))]
+
+
+def _hhmm_to_min(value: str) -> int:
+    return minutes_between("00:00", value)
+
+
+def _weekday_name(date_value: str) -> str:
+    try:
+        return date_type.fromisoformat(date_value).strftime("%A").lower()
+    except ValueError:
+        return "saturday"
+
+
+def _opening_window(poi: Any | None, weekday: str, start_min: int, end_min: int) -> tuple[int, int]:
+    if poi is None:
+        return start_min, end_min
+    open_hours = getattr(poi, "open_hours", {}) or {}
+    windows = open_hours.get(weekday, []) if isinstance(open_hours, dict) else []
+    if not windows:
+        return start_min, end_min
+    first = windows[0]
+    return _hhmm_to_min(first.get("open", "00:00")), _hhmm_to_min(first.get("close", "23:59"))
+
+
+def _travel_matrix(repo_by_id: dict[str, Any], candidate_ids: list[str]) -> dict[tuple[str, str], int]:
+    travel: dict[tuple[str, str], int] = {}
+    for from_id in candidate_ids:
+        for to_id in candidate_ids:
+            if from_id == to_id:
+                continue
+            origin = repo_by_id.get(from_id)
+            destination = repo_by_id.get(to_id)
+            if origin is None or destination is None:
+                travel[(from_id, to_id)] = 0
+                continue
+            if not all(
+                hasattr(item, attr)
+                for item in (origin, destination)
+                for attr in ("latitude", "longitude")
+            ):
+                travel[(from_id, to_id)] = 0
+                continue
+            distance_m = haversine_meters(origin, destination)
+            travel[(from_id, to_id)] = max(5, int(round(distance_m / 250)))
+    return travel
+
+
+def _variant_candidate_nodes(
+    nodes: list[OptwNode],
+    selected_ids: list[str],
+    *,
+    max_nodes: int = 8,
+) -> list[OptwNode]:
+    selected = [node for node in nodes if node.poi_id in set(selected_ids)]
+    selected_set = {node.poi_id for node in selected}
+    remaining = sorted(
+        [node for node in nodes if node.poi_id not in selected_set],
+        key=lambda node: node.utility,
+        reverse=True,
+    )
+    return [*selected, *remaining[: max(0, max_nodes - len(selected))]]
 
 
 def _select_feedback_replacement(

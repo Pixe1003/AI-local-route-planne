@@ -157,6 +157,8 @@ export function DiscoveryFeedPage() {
         route_chain: agentResult.route_chain ?? null,
         story_plan: agentResult.story_plan ?? null,
         agent_steps: agentResult.steps,
+        route_variants: agentResult.route_variants ?? [],
+        robustness: agentResult.robustness ?? null,
         free_text: query,
         date,
         time_window: { start, end }

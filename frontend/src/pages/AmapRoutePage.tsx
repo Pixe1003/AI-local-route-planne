@@ -8,6 +8,7 @@ import { createRouteChain } from "../api/route"
 import { AgentThinkingPanel } from "../components/AgentThinkingPanel"
 import { AmapRouteMap } from "../components/AmapRouteMap"
 import { useAmapRouteStore } from "../store/amapRouteStore"
+import type { RouteVariant } from "../types/agent"
 import type { PoiInPool } from "../types/pool"
 import type { AmapRouteRequest, RouteChainResponse, RoutePoi } from "../types/route"
 
@@ -60,6 +61,17 @@ export function AmapRoutePage() {
     }
   }, [routeRequest])
 
+  const robustness = routeRequest?.robustness ?? null
+  const routeVariants = routeRequest?.route_variants ?? []
+  const [selectedVariantLabel, setSelectedVariantLabel] = useState<string | null>(null)
+  const activeVariant = useMemo(() => {
+    if (!routeVariants.length) return null
+    if (selectedVariantLabel) {
+      const match = routeVariants.find(variant => variant.label === selectedVariantLabel)
+      if (match) return match
+    }
+    return routeVariants[0]
+  }, [routeVariants, selectedVariantLabel])
   const storyPlan = routeRequest?.story_plan ?? null
   const storyByPoiId = useMemo(
     () => new Map((storyPlan?.stops ?? []).map(stop => [stop.poi_id, stop])),
@@ -102,6 +114,8 @@ export function AmapRoutePage() {
             route_chain: response.route_chain ?? null,
             story_plan: response.story_plan ?? routeRequest.story_plan ?? null,
             agent_steps: response.steps,
+            route_variants: response.route_variants ?? routeRequest.route_variants ?? [],
+            robustness: response.robustness ?? routeRequest.robustness ?? null,
             free_text: routeRequest.free_text
               ? `${routeRequest.free_text}；${feedback.trim()}`
               : feedback.trim()
@@ -191,6 +205,22 @@ export function AmapRoutePage() {
           </span>
         </div>
 
+        {robustness ? (
+          <div
+            aria-label="路线鲁棒性"
+            className="route-robustness-badge"
+            data-testid="route-robustness-badge"
+          >
+            <span className="robustness-pill">
+              准时概率 <strong>{Math.round(robustness.on_time_prob * 100)}%</strong>
+            </span>
+            <span className="robustness-meta">
+              P90 总时长 {formatDuration(robustness.p90_total_min * 60)} · 期望超时 {Math.round(robustness.expected_overflow_min)} 分
+              <small>· 蒙特卡洛 {robustness.samples} 次模拟</small>
+            </span>
+          </div>
+        ) : null}
+
         {loading ? (
           <div className="route-panel-alert" role="status">
             <Route size={18} />
@@ -203,6 +233,53 @@ export function AmapRoutePage() {
         ) : null}
 
         <AgentThinkingPanel steps={routeRequest.agent_steps ?? []} />
+
+        {routeVariants.length > 1 ? (
+          <section
+            aria-label="Pareto 候选方案"
+            className="route-variants-panel"
+            data-testid="route-variants-panel"
+          >
+            <h2>方案对比（Pareto 前沿）</h2>
+            <p className="route-variants-hint">
+              非支配解集合：每条方案在兴趣 / 时长 / 花费 / 排队上至少有一个维度比其它更优。
+            </p>
+            <ul className="route-variants-list">
+              {routeVariants.map((variant, index) => {
+                const isActive = activeVariant?.label === variant.label
+                const reference = activeVariant
+                const diff = reference && reference !== variant
+                  ? describeVariantDiff(variant, reference)
+                  : "当前方案"
+                return (
+                  <li
+                    aria-current={isActive ? "true" : undefined}
+                    className={isActive ? "route-variant-card active" : "route-variant-card"}
+                    key={`${variant.label}-${index}`}
+                  >
+                    <button
+                      className="route-variant-button"
+                      onClick={() => setSelectedVariantLabel(variant.label)}
+                      type="button"
+                    >
+                      <header>
+                        <strong>{variantLabel(variant.label)}</strong>
+                        <small>{variant.solver}</small>
+                      </header>
+                      <div className="route-variant-metrics">
+                        <span>兴趣 {variant.interest.toFixed(1)}</span>
+                        <span>时长 {variant.time_min} 分</span>
+                        <span>花费 ¥{variant.cost}</span>
+                        <span>排队 {variant.queue_min} 分</span>
+                      </div>
+                      <p className="route-variant-diff">{diff}</p>
+                    </button>
+                  </li>
+                )
+              })}
+            </ul>
+          </section>
+        ) : null}
 
         <form className="route-feedback-form" data-testid="route-feedback-form" onSubmit={submitFeedback}>
           <label>
@@ -306,6 +383,44 @@ function routeChainMatchesRequest(routeChain: RouteChainResponse, poiIds: string
   if (routeChain.mode !== mode) return false
   const routePoiIds = routeChain.ordered_pois.map(poi => poi.id)
   return routePoiIds.length === poiIds.length && routePoiIds.every((poiId, index) => poiId === poiIds[index])
+}
+
+const VARIANT_LABELS: Record<string, string> = {
+  interest: "兴趣最高",
+  balanced: "折中",
+  time_saving: "更省时",
+  budget_saving: "更省钱",
+  low_queue: "排队更少",
+  frontier_interest: "前沿·兴趣",
+  frontier_budget: "前沿·预算",
+  frontier_queue: "前沿·排队",
+  frontier: "前沿候选"
+}
+
+function variantLabel(label: string): string {
+  return VARIANT_LABELS[label] ?? label
+}
+
+function describeVariantDiff(candidate: RouteVariant, reference: RouteVariant): string {
+  const parts: string[] = []
+  const interestDiff = candidate.interest - reference.interest
+  const timeDiff = candidate.time_min - reference.time_min
+  const costDiff = candidate.cost - reference.cost
+  const queueDiff = candidate.queue_min - reference.queue_min
+
+  if (Math.abs(interestDiff) >= 0.05) {
+    parts.push(`${interestDiff > 0 ? "多" : "少"} ${Math.abs(interestDiff).toFixed(1)} 兴趣`)
+  }
+  if (Math.abs(timeDiff) >= 1) {
+    parts.push(`${timeDiff > 0 ? "多" : "省"} ${Math.abs(timeDiff)} 分时长`)
+  }
+  if (Math.abs(costDiff) >= 1) {
+    parts.push(`${costDiff > 0 ? "多" : "省"} ¥${Math.abs(costDiff)}`)
+  }
+  if (Math.abs(queueDiff) >= 1) {
+    parts.push(`${queueDiff > 0 ? "多" : "少"} ${Math.abs(queueDiff)} 分排队`)
+  }
+  return parts.length ? `相比当前 ${parts.join("、")}` : "与当前几乎持平"
 }
 
 function routePoisFromRequest(

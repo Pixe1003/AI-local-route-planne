@@ -272,22 +272,33 @@ class PoolService:
             terms.extend(profile.food_preferences)
             terms.extend(profile.route_style)
         origin = origin_from_request(request)
-        base = dict(
-            city=city,
-            text=free_text,
-            top_k=80,
-            budget_per_person=budget,
-            avoid_queue="少排队" in (free_text or ""),
-            preference_terms=list(dict.fromkeys(terms)),
-            origin_latitude=origin[0] if origin else None,
-            origin_longitude=origin[1] if origin else None,
-            radius_meters=radius_from_request(request),
-        )
         profile_results = self.semantic_retrieval.retrieve(
-            RetrievalQuery(**base, source_types=["poi_profile"])
+            RetrievalQuery(
+                city=city,
+                text=free_text,
+                top_k=80,
+                budget_per_person=budget,
+                avoid_queue="少排队" in (free_text or ""),
+                preference_terms=list(dict.fromkeys(terms)),
+                origin_latitude=origin[0] if origin else None,
+                origin_longitude=origin[1] if origin else None,
+                radius_meters=radius_from_request(request),
+                source_types=["poi_profile"],
+            )
         )
         ugc_results = self.semantic_retrieval.retrieve(
-            RetrievalQuery(**base, source_types=["ugc_review"])
+            RetrievalQuery(
+                city=city,
+                text=free_text,
+                top_k=80,
+                budget_per_person=budget,
+                avoid_queue="少排队" in (free_text or ""),
+                preference_terms=list(dict.fromkeys(terms)),
+                origin_latitude=origin[0] if origin else None,
+                origin_longitude=origin[1] if origin else None,
+                radius_meters=radius_from_request(request),
+                source_types=["ugc_review"],
+            )
         )
         return self._merge_retrieved([profile_results, ugc_results])[:80]
 

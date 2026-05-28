@@ -154,6 +154,8 @@ class Conductor:
                 )
             if state.memory.validation is None:
                 return Decision(tool="validate_route", args={})
+            if state.memory.robustness is None:
+                return Decision(tool="assess_robustness", args={})
             if state.memory.critique is None:
                 return Decision(tool="critique", args={})
             return Decision(tool="finish", args={})
@@ -175,6 +177,15 @@ class Conductor:
                 tool="recommend_pool",
                 args={"free_text": state.goal.raw_query, "city": state.context.city},
             )
+        if state.memory.route_optimization is None:
+            return Decision(
+                tool="solve_constrained_route",
+                args={
+                    "max_stops": 5,
+                    "solver_mode": get_settings().route_solver,
+                    "time_limit_seconds": 3,
+                },
+            )
         if state.memory.story_plan is None:
             return Decision(tool="compose_story", args={"max_stops": 5})
         if state.memory.route_chain is None:
@@ -187,6 +198,8 @@ class Conductor:
             )
         if state.memory.validation is None:
             return Decision(tool="validate_route", args={})
+        if state.memory.robustness is None:
+            return Decision(tool="assess_robustness", args={})
         if state.memory.critique is None:
             return Decision(tool="critique", args={})
         return Decision(tool="finish", args={})

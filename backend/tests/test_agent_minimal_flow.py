@@ -108,15 +108,18 @@ def test_agent_run_fallback_executes_minimal_tool_chain(monkeypatch) -> None:
     assert data["story_plan"]["stops"]
     assert data["critique"] is not None
     assert len(route_calls) >= len(data["ordered_poi_ids"]) - 1
-    assert [step["tool_name"] for step in data["steps"]][:7] == [
+    assert [step["tool_name"] for step in data["steps"]][:9] == [
         "parse_intent",
         "search_ugc_evidence",
         "recommend_pool",
+        "solve_constrained_route",
         "compose_story",
         "get_amap_chain",
         "validate_route",
+        "assess_robustness",
         "critique",
     ]
+    assert data["robustness"]["on_time_prob"] >= 0
 
 
 def test_agent_run_uses_rule_sequence_without_llm_decision_by_default(monkeypatch) -> None:
