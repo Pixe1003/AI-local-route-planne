@@ -2,6 +2,9 @@ from app.schemas.onboarding import UserNeedProfile
 from app.schemas.plan import PlanContext, ScoreBreakdown, StructuredIntent
 from app.schemas.preferences import PreferenceSnapshot
 from app.schemas.user_memory import UserFacts
+from app.config import get_settings
+from app.ml.features import build_features, ugc_sim_from_match
+from app.ml.ranker import get_ranker
 from app.repositories.ugc_vector_repo import UgcVectorRepo, get_ugc_vector_repo
 from app.services.location_context import distance_from_origin, origin_from_context
 
@@ -54,7 +57,7 @@ class PoiScoringService:
             + distance_penalty
             + risk_penalty
         )
-        return ScoreBreakdown(
+        breakdown = ScoreBreakdown(
             user_interest=round(user_interest, 2),
             poi_quality=round(poi_quality, 2),
             context_fit=round(context_fit, 2),
@@ -68,6 +71,25 @@ class PoiScoringService:
             risk_penalty=round(risk_penalty, 2),
             total=round(total, 2),
         )
+        model_score = self._ranker_score(poi, breakdown, context, ugc_match)
+        if model_score is not None:
+            breakdown.total = round(model_score, 2)
+        return breakdown
+
+    def _ranker_score(
+        self,
+        poi,
+        breakdown: ScoreBreakdown,
+        context: PlanContext | None,
+        ugc_match: float,
+    ) -> float | None:
+        settings = get_settings()
+        if not settings.ranker_enabled:
+            return None
+        distance = self._raw_distance_m(poi, context)
+        ugc_sim = ugc_sim_from_match(ugc_match)
+        features = build_features(poi, breakdown, distance_m=distance or 0, ugc_sim=ugc_sim)
+        return get_ranker(settings.ranker_model_path).predict(features)
 
     def _user_interest_score(self, poi, text: str, profile: UserNeedProfile | None) -> float:
         score = 8.0
@@ -169,10 +191,13 @@ class PoiScoringService:
         return 0.0
 
     def _distance_penalty(self, poi, context: PlanContext | None) -> float:
-        origin = origin_from_context(context)
-        if origin is None:
-            return 0.0
-        distance = distance_from_origin(poi, origin)
+        distance = self._raw_distance_m(poi, context)
         if distance is None or distance <= 1500:
             return 0.0
         return -min((distance - 1500) / 1000 * 1.8, 18.0)
+
+    def _raw_distance_m(self, poi, context: PlanContext | None) -> float | None:
+        origin = origin_from_context(context)
+        if origin is None:
+            return None
+        return distance_from_origin(poi, origin)

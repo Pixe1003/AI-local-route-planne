@@ -1,0 +1,10 @@
+id: low_queue
+request:
+  user_id: eval_user
+  free_text: "efficient route with low queue, avoid popular waiting lines, include lunch"
+  city: hefei
+  date: "2026-05-26"
+  time_window:
+    start: "11:00"
+    end: "17:00"
+  budget_per_person: 150

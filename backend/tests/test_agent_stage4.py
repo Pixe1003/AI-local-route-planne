@@ -90,6 +90,7 @@ def test_agent_adjust_reuses_parent_state_and_records_feedback_trace(monkeypatch
         "replan_by_event",
         "get_amap_chain",
         "validate_route",
+        "assess_robustness",
         "critique",
     ]
     adjusted_state = load_state(data["session_id"])

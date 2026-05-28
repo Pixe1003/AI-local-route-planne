@@ -1,0 +1,12 @@
+id: must_visit
+request:
+  user_id: eval_user
+  free_text: "must visit the city museum, then add nearby food and culture stops"
+  city: hefei
+  date: "2026-05-26"
+  time_window:
+    start: "09:30"
+    end: "16:30"
+  budget_per_person: 160
+expected:
+  must_visit_ids: []

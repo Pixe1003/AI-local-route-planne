@@ -22,6 +22,9 @@ dependencies = [
   "opentelemetry-sdk>=1.25.0",
   "opentelemetry-exporter-otlp>=1.25.0",
   "opentelemetry-instrumentation-fastapi>=0.46b0",
+  "ortools>=9.10.4067",
+  "lightgbm>=4.5.0",
+  "pyyaml>=6.0.0",
 ]
 
 [project.optional-dependencies]

@@ -73,6 +73,12 @@
       }),
       'pool_id': 'str',
     }),
+    'robustness': dict({
+      'expected_overflow_min': 'float',
+      'on_time_prob': 'float',
+      'p90_total_min': 'float',
+      'samples': 'int',
+    }),
     'route_chain': dict({
       'geojson': dict({
         'features': list([
@@ -127,6 +133,39 @@
       'total_distance_m': 'float',
       'total_duration_s': 'float',
     }),
+    'route_optimization': dict({
+      'constraint_violations': list([
+        'str',
+      ]),
+      'fallback_used': 'bool',
+      'objective_value': 'float',
+      'optimality_gap': 'NoneType',
+      'selected_utility': 'float',
+      'solver': 'str',
+    }),
+    'route_variants': list([
+      dict({
+        'cost': 'int',
+        'dominated_by': list([
+        ]),
+        'interest': 'float',
+        'label': 'str',
+        'metrics': dict({
+          'cost': 'float',
+          'interest': 'float',
+          'queue': 'float',
+          'time': 'float',
+        }),
+        'non_dominated': 'bool',
+        'objective_value': 'float',
+        'ordered_ids': list([
+          'str',
+        ]),
+        'queue_min': 'int',
+        'solver': 'str',
+        'time_min': 'int',
+      }),
+    ]),
     'session_id': 'str',
     'steps': list([
       dict({
@@ -152,6 +191,22 @@
       ]),
       'fallback_used': 'bool',
       'narrative': 'str',
+      'optimization': dict({
+        'constraint_violations': list([
+          'str',
+        ]),
+        'fallback_used': 'bool',
+        'objective_value': 'float',
+        'optimality_gap': 'NoneType',
+        'selected_utility': 'float',
+        'solver': 'str',
+      }),
+      'robustness': dict({
+        'expected_overflow_min': 'float',
+        'on_time_prob': 'float',
+        'p90_total_min': 'float',
+        'samples': 'int',
+      }),
       'stops': list([
         dict({
           'poi_id': 'str',

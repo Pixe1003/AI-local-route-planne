@@ -1,4 +1,5 @@
 from math import asin, cos, radians, sin, sqrt
+from typing import Literal
 
 from app.schemas.poi import PoiDetail
 from app.schemas.plan import Transport
@@ -33,7 +34,10 @@ def estimate_transport(a: PoiDetail, b: PoiDetail) -> Transport:
     return _estimated_transport(a, b, source="fallback")
 
 
-def _estimated_transport(a: PoiDetail, b: PoiDetail, *, source: str = "estimated") -> Transport:
+TransportSource = Literal["amap", "estimated", "fallback"]
+
+
+def _estimated_transport(a: PoiDetail, b: PoiDetail, *, source: TransportSource = "estimated") -> Transport:
     distance = haversine_meters(a, b)
     if distance <= 1200:
         return Transport(

@@ -191,9 +191,12 @@ def test_agent_full_pipeline_returns_story_validation_and_critique(monkeypatch) 
         "parse_intent",
         "search_ugc_evidence",
         "recommend_pool",
+        "solve_constrained_route",
         "compose_story",
         "get_amap_chain",
         "validate_route",
+        "assess_robustness",
         "critique",
     ]
+    assert data["story_plan"]["robustness"]["samples"] == 500
     assert len(route_calls) == len(data["ordered_poi_ids"]) - 1

@@ -43,12 +43,12 @@ def origin_from_request(request: PoolRequest) -> Origin | None:
 def radius_from_request(request: PoolRequest) -> int | None:
     explicit_radius = getattr(request, "radius_meters", None)
     if explicit_radius is not None:
-        return explicit_radius
+        return int(explicit_radius)
 
     destination = getattr(getattr(request, "need_profile", None), "destination", None)
     profile_radius = getattr(destination, "radius_meters", None)
     if profile_radius is not None:
-        return profile_radius
+        return int(profile_radius)
 
     return None
 
@@ -99,4 +99,4 @@ def _city_from_request(request: PoolRequest) -> str:
 def _origin_from_values(latitude: float | None, longitude: float | None) -> Origin | None:
     if latitude is None or longitude is None:
         return None
-    return latitude, longitude
+    return float(latitude), float(longitude)

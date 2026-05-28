@@ -3,6 +3,22 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 
+class RouteOptimizationSummary(BaseModel):
+    solver: str
+    objective_value: float = 0.0
+    selected_utility: float = 0.0
+    constraint_violations: list[str] = Field(default_factory=list)
+    optimality_gap: float | None = None
+    fallback_used: bool = False
+
+
+class RobustnessSummary(BaseModel):
+    on_time_prob: float
+    expected_overflow_min: float
+    p90_total_min: float
+    samples: int
+
+
 class StoryStop(BaseModel):
     poi_id: str
     role: Literal["opener", "midway", "main", "rest", "closer"]
@@ -23,3 +39,5 @@ class StoryPlan(BaseModel):
     stops: list[StoryStop]
     dropped: list[DroppedStoryPoi] = Field(default_factory=list)
     fallback_used: bool = False
+    optimization: RouteOptimizationSummary | None = None
+    robustness: RobustnessSummary | None = None

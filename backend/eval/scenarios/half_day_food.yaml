@@ -1,0 +1,10 @@
+id: half_day_food
+request:
+  user_id: eval_user
+  free_text: "今天下午想少排队、吃本地菜、顺路拍照"
+  city: hefei
+  date: "2026-05-26"
+  time_window:
+    start: "14:00"
+    end: "20:00"
+  budget_per_person: 180

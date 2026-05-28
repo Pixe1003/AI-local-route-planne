@@ -4,6 +4,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, cast
 
+from pydantic import ValidationError
+
 from app.agent.state import AgentState
 
 
@@ -78,7 +80,12 @@ def load_state(session_id: str) -> AgentState | None:
             "SELECT state_json FROM agent_sessions WHERE session_id = ?",
             (session_id,),
         ).fetchone()
-    return AgentState.model_validate_json(row[0]) if row else None
+    if not row:
+        return None
+    try:
+        return AgentState.model_validate_json(row[0])
+    except ValidationError:
+        return None
 
 
 def list_sessions(user_id: str, limit: int = 20) -> list[AgentState]:
@@ -92,7 +99,13 @@ def list_sessions(user_id: str, limit: int = 20) -> list[AgentState]:
             """,
             (user_id, limit),
         ).fetchall()
-    return [AgentState.model_validate_json(row[0]) for row in rows]
+    sessions: list[AgentState] = []
+    for row in rows:
+        try:
+            sessions.append(AgentState.model_validate_json(row[0]))
+        except ValidationError:
+            continue
+    return sessions
 
 
 def session_cost_summary(session_id: str) -> dict[str, Any]:
