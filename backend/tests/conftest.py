@@ -28,15 +28,18 @@ def isolate_segment_route_cache():
 @pytest.fixture(autouse=True)
 def isolate_cache_state(tmp_path, monkeypatch):
     from app.llm import cache as llm_cache
+    from app.llm.embedding import get_sentence_transformer_model
     from app.repositories import embedding_cache
     from app.services.amap import cache as amap_cache
 
     monkeypatch.setattr(amap_cache, "DB_PATH", tmp_path / "amap_cache.sqlite", raising=False)
     llm_cache.clear()
     embedding_cache.clear()
+    get_sentence_transformer_model.cache_clear()
     yield
     llm_cache.clear()
     embedding_cache.clear()
+    get_sentence_transformer_model.cache_clear()
 
 
 @pytest.fixture(autouse=True)

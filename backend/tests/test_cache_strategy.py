@@ -203,6 +203,33 @@ def test_ugc_query_embedding_cache_reuses_same_query(tmp_path, monkeypatch) -> N
     assert fake_model.calls == 1
 
 
+def test_sentence_transformer_embedder_reuses_model_across_instances(monkeypatch) -> None:
+    from app.llm.embedding import SentenceTransformerEmbedder
+    from app.repositories import embedding_cache
+
+    embedding_cache.clear()
+    constructions = 0
+
+    class FakeModel:
+        def encode(self, text: str, normalize_embeddings: bool = True):
+            return np.asarray([1.0, 0.0], dtype="float32")
+
+    def fake_sentence_transformer(model_name: str) -> FakeModel:
+        nonlocal constructions
+        constructions += 1
+        assert model_name == "test-model"
+        return FakeModel()
+
+    module = ModuleType("sentence_transformers")
+    module.SentenceTransformer = fake_sentence_transformer
+    monkeypatch.setitem(sys.modules, "sentence_transformers", module)
+
+    SentenceTransformerEmbedder("test-model").embed_query("query one")
+    SentenceTransformerEmbedder("test-model").embed_query("query two")
+
+    assert constructions == 1
+
+
 def test_session_vector_query_embedding_cache_reuses_same_text(tmp_path, monkeypatch) -> None:
     from app.repositories import embedding_cache
     from app.repositories.session_vector_repo import SessionVectorRepo

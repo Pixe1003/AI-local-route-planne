@@ -180,6 +180,74 @@ def test_solve_constrained_route_tool_rewrites_pool_selection_and_records_optimi
     assert result.next_phase == "COMPOSING"
 
 
+def test_solve_constrained_route_caps_pareto_profile_time_limit(monkeypatch) -> None:
+    from app.solver.optw import OptwResult
+
+    repo = {
+        "closed": SimpleNamespace(
+            id="closed",
+            category="scenic",
+            visit_duration=20,
+            price_per_person=20,
+            open_hours={"tuesday": [{"open": "09:00", "close": "18:00"}]},
+        ),
+        "restaurant": SimpleNamespace(
+            id="restaurant",
+            category="restaurant",
+            visit_duration=20,
+            price_per_person=30,
+            open_hours={"tuesday": [{"open": "09:00", "close": "18:00"}]},
+        ),
+        "museum": SimpleNamespace(
+            id="museum",
+            category="culture",
+            visit_duration=20,
+            price_per_person=20,
+            open_hours={"tuesday": [{"open": "09:00", "close": "18:00"}]},
+        ),
+        "cafe": SimpleNamespace(
+            id="cafe",
+            category="cafe",
+            visit_duration=20,
+            price_per_person=10,
+            open_hours={"tuesday": [{"open": "09:00", "close": "18:00"}]},
+        ),
+    }
+
+    class FakeRepo:
+        def get_many(self, poi_ids):
+            return [repo[poi_id] for poi_id in poi_ids if poi_id in repo]
+
+    recorded: dict[str, float] = {}
+
+    def fake_solve_optw(*args, **kwargs):
+        return OptwResult(
+            ordered_ids=["restaurant", "museum", "cafe"],
+            solver="fake",
+            objective_value=1.0,
+            selected_utility=1.0,
+            total_duration_min=80,
+            total_cost=60,
+        )
+
+    def fake_build_pareto_variants(*args, **kwargs):
+        recorded["time_limit_seconds"] = kwargs["solve_kwargs"]["time_limit_seconds"]
+        return []
+
+    monkeypatch.setattr("app.agent.tools.get_poi_repository", lambda: FakeRepo())
+    monkeypatch.setattr("app.agent.tools.solve_optw", fake_solve_optw)
+    monkeypatch.setattr("app.agent.tools.build_pareto_variants", fake_build_pareto_variants)
+
+    result = get_tool_registry().execute(
+        "solve_constrained_route",
+        _state(),
+        {"max_stops": 3, "solver_mode": "optw", "time_limit_seconds": 3},
+    )
+
+    assert result.memory_patch["pool"].default_selected_ids == ["restaurant", "museum", "cafe"]
+    assert recorded["time_limit_seconds"] <= 0.5
+
+
 def test_validate_route_waits_until_poi_opens(monkeypatch) -> None:
     repo = {
         "restaurant": SimpleNamespace(
