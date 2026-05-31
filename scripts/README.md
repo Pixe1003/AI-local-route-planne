@@ -72,6 +72,44 @@ Recommended workflow:
    (i.e. the model beats the rule baseline NDCG@5 by ≥ 3%); otherwise set it
    to `false` via `.env` until training improves.
 
+## `bench_latency.py`
+
+Measures `/api/agent/run` response latency under a 2 × N × 5 matrix:
+
+- 2 decision modes: `rule` (fast path) vs `llm` (function calling).
+- N repeats per scenario; first repeat is the cold call, the rest are warm.
+- 5 scenarios from `backend/eval/scenarios/`.
+
+Outputs a markdown report to `data/eval/latency_report.md` containing:
+
+- E2E p50 / p95 / p99 / min / max / mean (warm, all scenarios pooled)
+- Cold-start latency per (scenario, mode)
+- Per-scenario E2E (warm)
+- Per-tool latency breakdown (warm only)
+- Advisory, non-gating thresholds:
+  - warm p95 <= 4500 ms
+  - max cold <= warm p95 x 3
+
+```powershell
+# default: rule + llm, 5 repeats, ~5 × 2 × 5 = 50 calls
+python scripts\bench_latency.py
+
+# quick smoke
+python scripts\bench_latency.py --repeats 2
+
+# only one mode
+python scripts\bench_latency.py --modes rule --repeats 3
+
+# serious tail-latency measurement
+python scripts\bench_latency.py --repeats 30
+```
+
+Amap is stubbed (same patch as `backend/eval/run_eval.py`) so reported timings
+reflect the Agent + solver critical path, not network jitter. See
+`docs/响应速度测试设计.md` for variable matrix, metric definitions, and known
+caveats. When `--repeats` is below 20, the generated report labels p99 as a
+weak exploratory signal instead of a tail-latency commitment.
+
 ## `warmup_demo_sessions.py`
 
 Posts several demo `/api/agent/run` requests for `demo_user` so user facts and similar-session memory have content for demos. Start the backend first.

@@ -1,3 +1,4 @@
+from functools import lru_cache
 from typing import Protocol
 
 import numpy as np
@@ -47,12 +48,17 @@ class SentenceTransformerEmbedder:
     def _model_instance(self):
         if self._model is not None:
             return self._model
-        try:
-            from sentence_transformers import SentenceTransformer
-        except ImportError as exc:
-            raise EmbeddingUnavailable("sentence-transformers is not installed") from exc
-        try:
-            self._model = SentenceTransformer(self.model_name)
-        except Exception as exc:
-            raise EmbeddingUnavailable("embedding model is unavailable") from exc
+        self._model = get_sentence_transformer_model(self.model_name)
         return self._model
+
+
+@lru_cache(maxsize=4)
+def get_sentence_transformer_model(model_name: str):
+    try:
+        from sentence_transformers import SentenceTransformer
+    except ImportError as exc:
+        raise EmbeddingUnavailable("sentence-transformers is not installed") from exc
+    try:
+        return SentenceTransformer(model_name)
+    except Exception as exc:
+        raise EmbeddingUnavailable("embedding model is unavailable") from exc

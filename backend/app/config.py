@@ -41,6 +41,8 @@ class Settings(BaseSettings):
     route_solver: str = "optw"
     ranker_enabled: bool = True
     ranker_model_path: str = "data/models/ranker.txt"
+    startup_warmup_enabled: bool = True
+    startup_warmup_query: str = "warmup"
 
     model_config = SettingsConfigDict(
         env_file=(PROJECT_ROOT / ".env", BACKEND_ROOT / ".env"),

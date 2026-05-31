@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from itertools import permutations
 from math import ceil
@@ -66,9 +67,7 @@ def build_pareto_variants(
 
     by_id = {node.poi_id: node for node in nodes}
     candidates: list[RouteVariant] = []
-    for label, weights in WEIGHT_PROFILES:
-        kwargs = {**solve_kwargs, "weights": weights}
-        result = solve_optw(nodes, travel_minutes, **kwargs)
+    for label, result in _solve_weight_profiles(nodes, travel_minutes, solve_kwargs):
         _append_result(candidates, result, label, by_id, travel_minutes, int(solve_kwargs["start_min"]))
 
     if len(nodes) <= 8:
@@ -80,6 +79,20 @@ def build_pareto_variants(
     frontier = _non_dominated(deduped)
     frontier.sort(key=lambda item: (-item.interest, item.cost, item.queue_min, item.time_min))
     return frontier[:max_variants]
+
+
+def _solve_weight_profiles(
+    nodes: list[OptwNode],
+    travel_minutes: dict[tuple[str, str], int],
+    solve_kwargs: dict[str, Any],
+) -> list[tuple[str, OptwResult]]:
+    def solve_profile(profile: tuple[str, dict[str, float]]) -> tuple[str, OptwResult]:
+        label, weights = profile
+        kwargs = {**solve_kwargs, "weights": weights}
+        return label, solve_optw(nodes, travel_minutes, **kwargs)
+
+    with ThreadPoolExecutor(max_workers=len(WEIGHT_PROFILES)) as executor:
+        return list(executor.map(solve_profile, WEIGHT_PROFILES))
 
 
 def dominates(left: dict[str, float], right: dict[str, float]) -> bool:

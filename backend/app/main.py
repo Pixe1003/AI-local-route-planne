@@ -1,3 +1,5 @@
+import logging
+from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from prometheus_fastapi_instrumentator import Instrumentator
@@ -17,9 +19,17 @@ from app.api import (
     routes_ugc,
 )
 from app.config import get_settings
+from app.ml.ranker import get_ranker
 from app.observability.logging import configure_logging
 from app.observability.tracing import configure_otel, instrument_fastapi_app
 from app.repositories.faiss_index import FaissVectorIndex
+from app.repositories.poi_repo import get_poi_repository
+from app.repositories.ugc_vector_repo import get_ugc_vector_repo
+from app.schemas.rag import RetrievalQuery
+from app.services.retrieval_service import RetrievalService
+
+
+logger = logging.getLogger(__name__)
 
 settings = get_settings()
 configure_logging(level=settings.log_level)
@@ -28,7 +38,35 @@ configure_otel(
     endpoint=settings.otel_exporter_otlp_endpoint or None,
 )
 
-app = FastAPI(title="AI 本地路线智能规划系统", version="0.1.0")
+
+def run_startup_warmup(settings) -> None:
+    if not settings.startup_warmup_enabled:
+        return
+    try:
+        poi_repo = get_poi_repository()
+        ugc = get_ugc_vector_repo()
+        if settings.ranker_enabled:
+            get_ranker(settings.ranker_model_path)
+        ugc.search(settings.startup_warmup_query, city=settings.default_city, top_k=1)
+        RetrievalService(repo=poi_repo).retrieve(
+            RetrievalQuery(
+                city=settings.default_city,
+                text=settings.startup_warmup_query,
+                top_k=1,
+                source_types=["poi_profile", "ugc_review"],
+            )
+        )
+    except Exception as exc:
+        logger.warning("startup warmup failed: %s", exc)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    run_startup_warmup(get_settings())
+    yield
+
+
+app = FastAPI(title="AI 本地路线智能规划系统", version="0.1.0", lifespan=lifespan)
 instrument_fastapi_app(app)
 
 app.add_middleware(

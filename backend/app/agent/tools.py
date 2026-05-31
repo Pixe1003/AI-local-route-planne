@@ -36,6 +36,9 @@ from app.sim.montecarlo import simulate
 from app.utils.time_utils import add_minutes, minutes_between
 
 
+PARETO_PROFILE_TIME_LIMIT_SECONDS = 0.5
+
+
 class ToolResult(BaseModel):
     observation_summary: str
     payload: Any | None = None
@@ -293,7 +296,7 @@ def _solve_constrained_route(state: AgentState, args: dict[str, Any]) -> ToolRes
                 "required_categories": required_categories,
                 "required_category_groups": required_groups,
                 "max_stops": max_stops,
-                "time_limit_seconds": time_limit_seconds,
+                "time_limit_seconds": min(time_limit_seconds, PARETO_PROFILE_TIME_LIMIT_SECONDS),
                 "solver_mode": solver_mode,
             },
         )
