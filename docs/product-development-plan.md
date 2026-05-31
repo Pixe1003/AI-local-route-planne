@@ -20,8 +20,9 @@
 ## Demo 前检查
 
 ```powershell
+# 从仓库根目录执行。真实数据目录默认使用仓库内 data/processed。
 $env:PYTHONPATH='backend'
-$env:AIROUTE_REAL_DATA_DIR='D:\Users\12057\Desktop\美团黑客松\AIroute\data\processed'
+$env:AIROUTE_REAL_DATA_DIR = Join-Path (Get-Location) 'data\processed'
 python -m pytest backend/tests/test_product_demo_readiness.py::test_real_hefei_data_smoke_when_configured backend/tests/test_product_demo_readiness.py::test_real_hefei_faiss_smoke_when_configured -q
 
 python scripts/build_faiss_rag.py --city hefei --sqlite-path "$env:AIROUTE_REAL_DATA_DIR\hefei_pois.sqlite" --require-real-data --index-dir data/faiss
