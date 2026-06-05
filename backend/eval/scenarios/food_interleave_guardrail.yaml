@@ -1,0 +1,18 @@
+id: food_interleave_guardrail
+request:
+  user_id: eval_user
+  free_text: "I mainly want local food, but do not stack restaurants back to back; add a culture or shopping break between two different food stops"
+  city: hefei
+  date: "2026-05-26"
+  time_window:
+    start: "10:30"
+    end: "16:00"
+  budget_per_person: 180
+expected:
+  max_restaurant_count: 2
+  min_non_restaurant_count: 2
+  no_adjacent_restaurants: true
+  unique_restaurant_subcategories: true
+  min_category_entropy: 1.0
+  max_variant_jaccard_overlap: 0.85
+  max_straight_segment_m: 12000

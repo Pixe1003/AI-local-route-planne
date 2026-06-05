@@ -12,6 +12,14 @@ python scripts/import_hefei_pois.py
 
 ## Retrieval indexes
 
+Generate deterministic Hefei demo UGC from the local POI SQLite. The output is
+`data/processed/ugc_hefei.jsonl`, uses `source=simulated_ugc`, and is ignored by
+git because it is a local demo data artifact:
+
+```powershell
+python scripts/generate_demo_ugc.py
+```
+
 Build the SQLite retrieval tables used by candidate recall and UGC evidence lookup:
 
 ```powershell

@@ -8,3 +8,8 @@ request:
     start: "13:00"
     end: "19:00"
   budget_per_person: 180
+  weather_condition: rainy
+expected:
+  min_indoor_ratio: 0.6
+  max_variant_jaccard_overlap: 0.85
+  min_category_entropy: 0.6

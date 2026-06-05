@@ -1,5 +1,9 @@
 from datetime import datetime, timezone
-from typing import Any
+import logging
+import queue
+import threading
+import time
+from typing import Any, Callable
 from uuid import uuid4
 
 from app.config import get_settings
@@ -23,6 +27,84 @@ from app.services.poi_scoring_service import PoiScoringService
 from app.services.retrieval_service import RetrievalService
 from app.services.state import POOL_REGISTRY
 from app.solver.distance import haversine_meters
+
+
+_MISSING = object()
+_SEMANTIC_LOGGER_NAMES = ("huggingface_hub", "sentence_transformers")
+
+
+class SemanticRetrievalGuard:
+    _cooldown_until: float = 0.0
+
+    @classmethod
+    def reset_cooldown(cls) -> None:
+        cls._cooldown_until = 0.0
+
+    @classmethod
+    def run(
+        cls,
+        task: Callable[[], list[RetrievedPoi]],
+        *,
+        timeout_ms: int,
+        cooldown_seconds: int,
+    ) -> tuple[list[RetrievedPoi], dict[str, Any]]:
+        now = time.monotonic()
+        if now < cls._cooldown_until:
+            return [], {
+                "semantic_status": "cooldown",
+                "semantic_elapsed_ms": 0,
+                "semantic_query_count": 0,
+            }
+
+        started = time.perf_counter()
+        output: queue.Queue[tuple[str, Any]] = queue.Queue(maxsize=1)
+        thread = threading.Thread(
+            target=_run_semantic_task,
+            args=(task, output),
+            name="semantic-retrieval",
+            daemon=True,
+        )
+        thread.start()
+        try:
+            status, payload = output.get(timeout=max(timeout_ms, 1) / 1000)
+        except queue.Empty:
+            cls._cooldown_until = time.monotonic() + max(cooldown_seconds, 0)
+            return [], {
+                "semantic_status": "timeout",
+                "semantic_elapsed_ms": int((time.perf_counter() - started) * 1000),
+                "semantic_query_count": 1,
+            }
+        if status == "error":
+            return [], {
+                "semantic_status": "error",
+                "semantic_elapsed_ms": int((time.perf_counter() - started) * 1000),
+                "semantic_query_count": 1,
+                "semantic_error": str(payload),
+            }
+
+        return list(payload or []), {
+            "semantic_status": "ok",
+            "semantic_elapsed_ms": int((time.perf_counter() - started) * 1000),
+            "semantic_query_count": 1,
+        }
+
+
+def _run_semantic_task(task: Callable[[], list[RetrievedPoi]], output: queue.Queue[tuple[str, Any]]) -> None:
+    previous_levels: list[tuple[logging.Logger, int]] = []
+    for logger_name in _SEMANTIC_LOGGER_NAMES:
+        logger = logging.getLogger(logger_name)
+        previous_levels.append((logger, logger.level))
+        logger.setLevel(max(logger.level, logging.ERROR))
+    try:
+        output.put(("ok", task()), block=False)
+    except Exception as exc:  # pragma: no cover - exercised through guard error path
+        try:
+            output.put(("error", exc), block=False)
+        except queue.Full:
+            pass
+    finally:
+        for logger, level in previous_levels:
+            logger.setLevel(level)
 
 
 class PoolService:
@@ -65,7 +147,7 @@ class PoolService:
         self.ugc_repo = self.poi_scorer.ugc_repo
         self.retrieval_service = retrieval_service or PoiRetrievalService(repo=self.repo)
         self.semantic_retrieval = semantic_retrieval or RetrievalService(repo=self.repo)
-        self.last_retrieval_stats: dict[str, int] = {}
+        self.last_retrieval_stats: dict[str, Any] = {}
 
     def generate_pool(self, request: PoolRequest) -> PoolResponse:
         profile = request.need_profile
@@ -77,14 +159,38 @@ class PoolService:
             else request.budget_per_person
         )
         city = profile.destination.city if profile else request.city
-        semantic_results = self._semantic_candidates(request, city, persona_tags, free_text, budget)
-        retrieved_by_id = {item.poi_id: item for item in semantic_results}
         retrieval = self.retrieval_service.retrieve_with_stats(request, limit=300)
-        candidate_ids = [*retrieved_by_id, *retrieval.poi_ids]
-        candidates = self.repo.get_many(list(dict.fromkeys(candidate_ids)))
+        structured_candidates = self._prepare_structured_candidates(retrieval.poi_ids, city, request)
+        budget_first = self._is_budget_first_request(request, free_text, budget)
+        structured_sufficient = self._structured_pool_sufficient(structured_candidates)
+        semantic_results: list[RetrievedPoi] = []
+        semantic_stats: dict[str, Any] = {
+            "semantic_status": "skipped_budget_first",
+            "semantic_elapsed_ms": 0,
+            "semantic_query_count": 0,
+        }
+        if not (budget_first and structured_sufficient):
+            semantic_results, semantic_stats = self._semantic_candidates_guarded(
+                request,
+                city,
+                persona_tags,
+                free_text,
+                budget,
+                budget_first=budget_first,
+            )
+        retrieved_by_id = {item.poi_id: item for item in semantic_results}
+        semantic_candidates = self.repo.get_many([item.poi_id for item in semantic_results])
+        candidates = self._merge_candidate_pois(
+            [structured_candidates, semantic_candidates]
+            if budget_first
+            else [semantic_candidates, structured_candidates]
+        )
         self.last_retrieval_stats = {
             **retrieval.stats,
+            "retrieval_mode": "budget_first" if budget_first else "semantic_first",
+            "structured_candidates": len(structured_candidates),
             "semantic_candidates": len(semantic_results),
+            **semantic_stats,
             "rerank_candidates": len(candidates),
         }
         if not candidates:
@@ -92,6 +198,7 @@ class PoolService:
             if not candidates and city != "hefei":
                 candidates = self.repo.list_by_city("hefei")
             self.last_retrieval_stats = {
+                **self.last_retrieval_stats,
                 "total_candidates": len(candidates),
                 "rerank_candidates": len(candidates),
             }
@@ -152,11 +259,12 @@ class PoolService:
                     cover_image=poi.cover_image,
                     distance_meters=distance_from_origin(poi, origin),
                     why_recommend=self._why_recommend(
-                        poi.name,
+                        poi,
                         poi.tags,
                         free_text,
                         breakdown.history_preference,
                         retrieved_item,
+                        weather_condition=request.weather_condition,
                     ),
                     highlight_quote=(
                         evidence[0].text
@@ -196,6 +304,115 @@ class PoolService:
         POOL_REGISTRY[response.pool_id] = response
         return response
 
+    def _prepare_structured_candidates(
+        self,
+        poi_ids: list[str],
+        city: str,
+        request: PoolRequest,
+    ) -> list[PoiDetail]:
+        candidates = self.repo.get_many(list(dict.fromkeys(poi_ids)))
+        if not candidates:
+            candidates = self.repo.list_by_city(city)
+            if not candidates and city != "hefei":
+                candidates = self.repo.list_by_city("hefei")
+        else:
+            candidates = self._supplement_category_coverage(candidates, city)
+        return self._filter_user_and_radius(candidates, request)
+
+    def _filter_user_and_radius(self, candidates: list[PoiDetail], request: PoolRequest) -> list[PoiDetail]:
+        if request.user_facts and request.user_facts.rejected_poi_ids:
+            rejected = set(request.user_facts.rejected_poi_ids)
+            filtered = [poi for poi in candidates if poi.id not in rejected]
+            if len(filtered) >= 3:
+                candidates = filtered
+        return self._filter_by_radius(candidates, request)
+
+    def _merge_candidate_pois(self, groups: list[list[PoiDetail]]) -> list[PoiDetail]:
+        merged: list[PoiDetail] = []
+        seen: set[str] = set()
+        for group in groups:
+            for poi in group:
+                poi_id = getattr(poi, "id", None)
+                if not poi_id or poi_id in seen:
+                    continue
+                merged.append(poi)
+                seen.add(poi_id)
+        return merged
+
+    def _is_budget_first_request(
+        self,
+        request: PoolRequest,
+        free_text: str | None,
+        budget: int | None,
+    ) -> bool:
+        settings = get_settings()
+        threshold = int(getattr(settings, "budget_first_threshold", 100) or 100)
+        if budget is not None and budget <= threshold:
+            return True
+        text = (free_text or request.free_text or "").lower()
+        return any(
+            token in text
+            for token in [
+                "budget friendly",
+                "budget-friendly",
+                "budget tight",
+                "low budget",
+                "no expensive",
+                "not expensive",
+                "cheap",
+                "under ",
+                "within budget",
+                "\u9884\u7b97\u7d27",
+                "\u9884\u7b97\u6709\u9650",
+                "\u63a7\u5236\u9884\u7b97",
+                "\u4e0d\u8d85\u9884\u7b97",
+                "\u4e0d\u8d85\u8fc7",
+                "\u4ee5\u5185",
+            ]
+        )
+
+    def _structured_pool_sufficient(self, candidates: list[PoiDetail]) -> bool:
+        if len(candidates) < 24:
+            return False
+        categories = {poi.category for poi in candidates}
+        return "restaurant" in categories and bool(categories - {"restaurant"})
+
+    def _semantic_candidates_guarded(
+        self,
+        request: PoolRequest,
+        city: str,
+        persona_tags: list[str],
+        free_text: str | None,
+        budget: int | None,
+        *,
+        budget_first: bool,
+    ) -> tuple[list[RetrievedPoi], dict[str, Any]]:
+        settings = get_settings()
+        if not getattr(settings, "rag_enabled", True):
+            return [], {
+                "semantic_status": "disabled",
+                "semantic_elapsed_ms": 0,
+                "semantic_query_count": 0,
+            }
+        vector_index = getattr(self.semantic_retrieval, "vector_index", _MISSING)
+        if vector_index is None:
+            return [], {
+                "semantic_status": "disabled",
+                "semantic_elapsed_ms": 0,
+                "semantic_query_count": 0,
+            }
+        timeout_ms = (
+            int(getattr(settings, "budget_first_semantic_timeout_ms", 600) or 600)
+            if budget_first
+            else int(getattr(settings, "semantic_retrieval_timeout_ms", 1200) or 1200)
+        )
+        cooldown_seconds = int(getattr(settings, "semantic_timeout_cooldown_seconds", 60) or 60)
+        return SemanticRetrievalGuard.run(
+            lambda: self._semantic_candidates(request, city, persona_tags, free_text, budget),
+            timeout_ms=timeout_ms,
+            cooldown_seconds=cooldown_seconds,
+        )
+
     def _score_poi(
         self,
         poi: PoiDetail,
@@ -213,7 +430,9 @@ class PoolService:
         profile_score = self._cheap_profile_score(poi, request, free_text) * 0.24
         history_score = self._cheap_history_score(poi, request) * 0.20
         ugc_bonus = 0.10 if ugc_by_poi and poi.id in ugc_by_poi else 0.0
+        explicit_category_bonus = self._explicit_category_bonus(poi, free_text)
         distance_penalty = self._distance_penalty_score(poi, context)
+        weather_adjustment = self._weather_adjustment_score(poi, context)
         budget_penalty = 0.0
         if budget_per_person and poi.price_per_person and poi.price_per_person > budget_per_person:
             budget_penalty = min((poi.price_per_person - budget_per_person) / max(budget_per_person, 1), 2) * 0.18
@@ -228,6 +447,8 @@ class PoolService:
                 + profile_score
                 + history_score
                 + ugc_bonus
+                + explicit_category_bonus
+                + weather_adjustment
                 - budget_penalty
                 - distance_penalty,
             ),
@@ -235,12 +456,20 @@ class PoolService:
 
     def _why_recommend(
         self,
-        name: str,
+        poi: PoiDetail,
         tags: list[str],
         free_text: str | None,
         history_preference: float,
         retrieved_item: RetrievedPoi | None = None,
+        weather_condition: str = "normal",
     ) -> str:
+        name = poi.name
+        if weather_condition == "rainy" and poi.category in {"culture", "shopping", "cafe", "entertainment", "restaurant"}:
+            return f"{name}更适合雨天安排，室内停留稳定，也方便和周边点位串联。"
+        if weather_condition == "hot" and poi.category in {"cafe", "shopping", "culture", "entertainment", "restaurant"}:
+            return f"{name}适合炎热天气下作为室内或短停留节点，能降低暴晒和长距离移动成本。"
+        if weather_condition == "cold" and poi.category in {"restaurant", "cafe", "shopping", "culture", "entertainment"}:
+            return f"{name}适合偏冷天气下安排，停留环境更稳定。"
         if retrieved_item and retrieved_item.evidence_snippets:
             if any(item.source_type == "ugc_review" for item in retrieved_item.evidence_snippets):
                 return f"{name}由本次 UGC 语义检索召回，证据和你的细粒度需求更贴近。"
@@ -252,6 +481,45 @@ class PoolService:
         if "photogenic" in tags or "拍照" in tags:
             return f"{name}适合拍照打卡，也方便和周边点位串联。"
         return f"{name}和本次需求匹配度较高，适合作为路线候选。"
+
+    def _weather_adjustment_score(self, poi: PoiDetail, context) -> float:
+        weather = getattr(context, "weather_condition", "normal") if context is not None else "normal"
+        distance = distance_from_origin(poi, origin_from_context(context)) if context is not None else None
+        if weather == "rainy":
+            if poi.category in {"culture", "shopping", "cafe", "entertainment", "restaurant"}:
+                return 0.12
+            if poi.category in {"outdoor", "scenic"}:
+                return -0.18
+        if weather == "hot":
+            score = 0.10 if poi.category in {"cafe", "shopping", "culture", "entertainment", "restaurant"} else 0.0
+            if poi.category in {"outdoor", "scenic"}:
+                score -= 0.12
+            if distance is not None and distance > 4500:
+                score -= 0.08
+            return score
+        if weather == "cold":
+            if poi.category in {"restaurant", "cafe", "shopping", "culture", "entertainment"}:
+                return 0.08
+            if poi.category in {"outdoor", "scenic"}:
+                return -0.08
+        return 0.0
+
+    def _explicit_category_bonus(self, poi: PoiDetail, free_text: str | None) -> float:
+        text = (free_text or "").lower()
+        if not text:
+            return 0.0
+        if any(keyword in text for keyword in ["culture", "museum", "gallery", "exhibition", "art"]):
+            if poi.category == "culture":
+                return 0.18
+            if poi.category == "scenic":
+                return 0.04
+        if any(keyword in text for keyword in ["cafe", "cafes", "coffee"]) and poi.category == "cafe":
+            return 0.16
+        if any(keyword in text for keyword in ["shopping", "mall", "shop"]) and poi.category == "shopping":
+            return 0.04
+        if any(keyword in text for keyword in ["food", "restaurant", "local food", "lunch", "dinner"]):
+            return 0.06 if poi.category == "restaurant" else 0.0
+        return 0.0
 
     def _semantic_candidates(
         self,
@@ -272,35 +540,21 @@ class PoolService:
             terms.extend(profile.food_preferences)
             terms.extend(profile.route_style)
         origin = origin_from_request(request)
-        profile_results = self.semantic_retrieval.retrieve(
+        results = self.semantic_retrieval.retrieve(
             RetrievalQuery(
                 city=city,
                 text=free_text,
-                top_k=80,
+                top_k=120,
                 budget_per_person=budget,
                 avoid_queue="少排队" in (free_text or ""),
                 preference_terms=list(dict.fromkeys(terms)),
                 origin_latitude=origin[0] if origin else None,
                 origin_longitude=origin[1] if origin else None,
                 radius_meters=radius_from_request(request),
-                source_types=["poi_profile"],
+                source_types=["poi_profile", "ugc_review"],
             )
         )
-        ugc_results = self.semantic_retrieval.retrieve(
-            RetrievalQuery(
-                city=city,
-                text=free_text,
-                top_k=80,
-                budget_per_person=budget,
-                avoid_queue="少排队" in (free_text or ""),
-                preference_terms=list(dict.fromkeys(terms)),
-                origin_latitude=origin[0] if origin else None,
-                origin_longitude=origin[1] if origin else None,
-                radius_meters=radius_from_request(request),
-                source_types=["ugc_review"],
-            )
-        )
-        return self._merge_retrieved([profile_results, ugc_results])[:80]
+        return results[:80]
 
     def _merge_retrieved(self, groups: list[list[RetrievedPoi]]) -> list[RetrievedPoi]:
         merged: dict[str, RetrievedPoi] = {}
@@ -345,8 +599,24 @@ class PoolService:
         score = 0.45
         profile = request.need_profile if request else None
         text = free_text or ""
+        lowered = text.lower()
         if profile and profile.party_type and profile.party_type in poi.suitable_for:
             score += 0.12
+        if any(keyword in lowered for keyword in ["food", "restaurant", "local food", "lunch", "dinner"]):
+            score += 0.18 if poi.category == "restaurant" else 0.0
+        if any(keyword in lowered for keyword in ["cafe", "cafes", "coffee"]):
+            score += 0.28 if poi.category == "cafe" else 0.0
+        if any(keyword in lowered for keyword in ["culture", "museum", "gallery", "exhibition", "art"]):
+            score += 0.44 if poi.category == "culture" else 0.04 if poi.category == "scenic" else 0.0
+        if any(keyword in lowered for keyword in ["shopping", "mall", "shop"]):
+            score += 0.2 if poi.category == "shopping" else 0.0
+        if any(keyword in lowered for keyword in ["rainy", "indoor"]) and poi.category in {
+            "culture",
+            "cafe",
+            "shopping",
+            "entertainment",
+        }:
+            score += 0.08
         if any(keyword in text for keyword in ["吃", "餐", "美食", "本地菜", "火锅"]):
             score += 0.18 if poi.category == "restaurant" else 0.0
         if "咖啡" in text and poi.category == "cafe":
@@ -553,7 +823,25 @@ class PoolService:
             token in text for token in ["shopping", "mall", "shop", "商场", "购物", "逛街", "步行街", "商业街"]
         ):
             shopping = max(shopping, min(4, round(limit * 0.2)))
-        if any(token in text for token in ["scenic", "park", "walk", "景点", "公园", "文化", "展览", "散步", "拍照"]):
+        if any(
+            token in text
+            for token in [
+                "scenic",
+                "park",
+                "walk",
+                "culture",
+                "museum",
+                "gallery",
+                "exhibition",
+                "art",
+                "景点",
+                "公园",
+                "文化",
+                "展览",
+                "散步",
+                "拍照",
+            ]
+        ):
             experience = max(experience, round(limit * 0.33))
 
         while dining + experience + shopping > limit:

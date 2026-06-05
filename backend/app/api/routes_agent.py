@@ -18,6 +18,7 @@ from app.agent.user_memory import get_user_facts
 from app.config import get_settings
 from app.llm.client import LlmClient
 from app.observability.metrics import MEMORY_LAYER_USAGE
+from app.schemas.common import WeatherCondition
 from app.schemas.onboarding import UserNeedProfile
 from app.schemas.plan import PlanContext, ValidationResult
 from app.schemas.pool import PoolResponse, TimeWindow
@@ -36,6 +37,7 @@ class AgentRunRequest(BaseModel):
     time_window: TimeWindow | None = None
     date: str
     budget_per_person: int | None = None
+    weather_condition: WeatherCondition = "normal"
     need_profile: UserNeedProfile | None = None
     origin_latitude: float | None = None
     origin_longitude: float | None = None
@@ -64,6 +66,7 @@ class AgentRunResponse(BaseModel):
     route_optimization: dict[str, Any] | None = None
     route_variants: list[dict[str, Any]] = Field(default_factory=list)
     robustness: dict[str, Any] | None = None
+    transport_notice: str | None = None
     steps: list[ToolCall] = Field(default_factory=list)
 
 
@@ -173,6 +176,7 @@ def build_initial_state(request: AgentRunRequest) -> AgentState:
             if request.radius_meters is not None
             else (profile_context.radius_meters if profile_context else None)
         ),
+        weather_condition=request.weather_condition,
     )
     profile = request.need_profile or UserNeedProfile.from_plan_context(context, raw_query=request.free_text)
     profile.user_id = request.user_id
@@ -210,6 +214,7 @@ def build_adjust_state(parent: AgentState, request: AgentAdjustRequest) -> Agent
     state.phase = "UNDERSTANDING"
     state.trace_id = uuid4().hex
     state.memory.route_chain = None
+    state.memory.transport_notice = None
     state.memory.validation = None
     state.memory.robustness = None
     state.memory.critique = None
@@ -284,7 +289,14 @@ def _load_similar_sessions(
 
 def _response_from_state(state: AgentState) -> AgentRunResponse:
     route_chain = state.memory.route_chain
-    ordered_poi_ids = [poi.id for poi in route_chain.ordered_pois] if route_chain else []
+    if route_chain:
+        ordered_poi_ids = [poi.id for poi in route_chain.ordered_pois]
+    elif state.memory.story_plan and state.memory.story_plan.stops:
+        ordered_poi_ids = [stop.poi_id for stop in state.memory.story_plan.stops]
+    elif state.memory.pool:
+        ordered_poi_ids = list(state.memory.pool.default_selected_ids)
+    else:
+        ordered_poi_ids = []
     return AgentRunResponse(
         session_id=state.goal.session_id,
         trace_id=state.trace_id,
@@ -298,5 +310,6 @@ def _response_from_state(state: AgentState) -> AgentRunResponse:
         route_optimization=state.memory.route_optimization,
         route_variants=state.memory.route_variants,
         robustness=state.memory.robustness,
+        transport_notice=state.memory.transport_notice,
         steps=state.steps,
     )

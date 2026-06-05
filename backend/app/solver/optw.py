@@ -16,6 +16,9 @@ class OptwNode:
     open_min: int
     close_min: int
     queue_min: int = 0
+    district: str = ""
+    business_area: str = ""
+    price_band: str = ""
 
 
 @dataclass

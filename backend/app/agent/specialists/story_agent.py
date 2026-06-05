@@ -120,11 +120,10 @@ class StoryAgent:
             if state.memory.intent and state.memory.intent.hard_constraints.budget_total
             else state.context.budget_per_person
         )
-        if budget:
-            budgeted = self._select_budgeted_candidates(candidates, budget)
-            if len(budgeted) >= 3:
-                return budgeted
-
+        strict_budget = bool(
+            state.memory.intent
+            and getattr(state.memory.intent.hard_constraints, "strict_budget", False)
+        )
         by_id = {item.poi_id: item for item in candidates}
         selected: list[CandidateEvidence] = []
         default_ids = state.memory.pool.default_selected_ids if state.memory.pool else []
@@ -133,7 +132,14 @@ class StoryAgent:
             if item and item not in selected:
                 selected.append(item)
             if len(selected) >= 5:
-                return selected
+                break
+        if len(selected) >= 3 and (not strict_budget or self._within_budget(selected, budget)):
+            return selected[:5]
+
+        if budget and strict_budget:
+            budgeted = self._select_budgeted_candidates(candidates, budget)
+            if len(budgeted) >= 3:
+                return budgeted
 
         def append_best(category: str) -> None:
             if any(item.category == category for item in selected):
@@ -160,6 +166,11 @@ class StoryAgent:
             if len(selected) >= 5:
                 break
         return selected[:5]
+
+    def _within_budget(self, candidates: list[CandidateEvidence], budget: int | None) -> bool:
+        if not budget:
+            return True
+        return sum(item.price_per_person or 0 for item in candidates) <= budget
 
     def _select_budgeted_candidates(
         self,

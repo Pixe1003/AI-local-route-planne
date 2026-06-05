@@ -1,0 +1,20 @@
+id: rainy_parent_child_short
+request:
+  user_id: eval_user
+  free_text: "rainy parent child afternoon, mostly indoor, include snack or meal, culture or mall, short transfers"
+  city: hefei
+  date: "2026-05-26"
+  weather_condition: rainy
+  party: family
+  time_window:
+    start: "13:30"
+    end: "18:00"
+  budget_per_person: 180
+expected:
+  min_indoor_ratio: 0.75
+  max_restaurant_count: 2
+  min_non_restaurant_count: 2
+  no_adjacent_restaurants: true
+  min_category_entropy: 1.0
+  max_variant_jaccard_overlap: 0.85
+  max_straight_segment_m: 16000

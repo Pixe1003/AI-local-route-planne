@@ -2,6 +2,8 @@ from typing import Any, Optional
 
 from pydantic import BaseModel, Field
 
+from app.schemas.common import today_iso
+
 
 class DestinationProfile(BaseModel):
     city: str = "hefei"
@@ -28,7 +30,7 @@ class UserNeedProfile(BaseModel):
     user_id: str = "mock_user"
     destination: DestinationProfile = Field(default_factory=DestinationProfile)
     time: TimeProfile = Field(default_factory=TimeProfile)
-    date: str = "2026-05-02"
+    date: str = Field(default_factory=today_iso)
     activity_preferences: list[str] = Field(default_factory=list)
     food_preferences: list[str] = Field(default_factory=list)
     taste_preferences: list[str] = Field(default_factory=list)

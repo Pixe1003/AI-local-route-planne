@@ -170,6 +170,80 @@ describe("AmapRoutePage", () => {
     expect(screen.getByText(/高德 JS Key 未配置/)).toBeInTheDocument()
   })
 
+  it("keeps a text route available when the route-chain request fails", async () => {
+    createRouteChain.mockRejectedValue(new Error("AMAP_CONFIG_MISSING"))
+    useAmapRouteStore.getState().setRouteRequest({
+      mode: "driving",
+      poi_ids: ["sh_poi_001", "sh_poi_002"],
+      source: "ugc_instant_route",
+      pool: {
+        pool_id: "pool_1",
+        categories: [
+          {
+            name: "路线点",
+            description: "demo",
+            pois: [
+              {
+                id: "sh_poi_001",
+                name: "外滩",
+                category: "scenic",
+                latitude: 31.24,
+                longitude: 121.49,
+                rating: 4.8,
+                price_per_person: null,
+                cover_image: null,
+                distance_meters: 200,
+                why_recommend: "适合顺路拍照",
+                highlight_quote: "演示 UGC",
+                keywords: [],
+                estimated_queue_min: 10,
+                suitable_score: 0.9,
+                score_breakdown: {},
+                retrieval_provenance: [],
+                evidence_snippets: []
+              },
+              {
+                id: "sh_poi_002",
+                name: "豫园",
+                category: "culture",
+                latitude: 31.23,
+                longitude: 121.48,
+                rating: 4.7,
+                price_per_person: null,
+                cover_image: null,
+                distance_meters: 500,
+                why_recommend: "适合室内文化体验",
+                highlight_quote: "演示 UGC",
+                keywords: [],
+                estimated_queue_min: 12,
+                suitable_score: 0.85,
+                score_breakdown: {},
+                retrieval_provenance: [],
+                evidence_snippets: []
+              }
+            ]
+          }
+        ],
+        default_selected_ids: ["sh_poi_001", "sh_poi_002"],
+        meta: {
+          total_count: 2,
+          generated_at: "2026-05-02T00:00:00Z",
+          user_persona_summary: "demo"
+        }
+      }
+    })
+
+    render(
+      <MemoryRouter>
+        <AmapRoutePage />
+      </MemoryRouter>
+    )
+
+    expect(await screen.findByText("地图路线暂不可用，以下为文字路线建议。")).toBeInTheDocument()
+    expect(screen.getByText("外滩")).toBeInTheDocument()
+    expect(screen.getByText("豫园")).toBeInTheDocument()
+  })
+
   it("updates recommended POIs from user feedback and reruns Amap route generation", async () => {
     useAmapRouteStore.getState().setRouteRequest({
       mode: "driving",
@@ -436,8 +510,73 @@ describe("AmapRoutePage", () => {
 
     fireEvent.click(variantButtons[1])
 
+    await waitFor(() => {
+      expect(createRouteChain).toHaveBeenCalledWith({
+        mode: "driving",
+        poi_ids: ["sh_poi_002", "sh_poi_003"]
+      })
+    })
+    expect(useAmapRouteStore.getState().routeRequest).toEqual(
+      expect.objectContaining({
+        poi_ids: ["sh_poi_002", "sh_poi_003"],
+        route_chain: null,
+        active_variant_label: "frontier"
+      })
+    )
     const cards = container.querySelectorAll(".route-variant-card")
     expect(container.querySelectorAll(".route-variant-card.active")).toHaveLength(1)
     expect(cards[1]).toHaveClass("active")
+  })
+
+  it("renders Pareto business labels, tradeoff reasons, and low-diversity notice", async () => {
+    useAmapRouteStore.getState().setRouteRequest({
+      mode: "driving",
+      poi_ids: ["sh_poi_001", "sh_poi_002"],
+      source: "ugc_instant_route",
+      free_text: "rainy indoor route",
+      route_chain: routeResult,
+      route_variants: [
+        {
+          label: "interest",
+          ordered_ids: ["sh_poi_001", "sh_poi_002"],
+          solver: "exact",
+          interest: 100,
+          time_min: 60,
+          cost: 80,
+          queue_min: 20,
+          metrics: { interest: 100, time: 60, cost: 80, queue: 20 },
+          objective_value: 100,
+          non_dominated: true,
+          diversity_score: 0.2,
+          business_label: "室内稳妥",
+          tradeoff_reason: "雨天优先室内点位，但候选受限，方案差异较小。"
+        },
+        {
+          label: "balanced",
+          ordered_ids: ["sh_poi_001", "sh_poi_002", "sh_poi_003"],
+          solver: "exact",
+          interest: 92,
+          time_min: 58,
+          cost: 76,
+          queue_min: 18,
+          metrics: { interest: 92, time: 58, cost: 76, queue: 18 },
+          objective_value: 92,
+          non_dominated: true,
+          diversity_score: 0.25,
+          business_label: "兴趣优先",
+          tradeoff_reason: "保留高兴趣点位，轻微牺牲路线差异。"
+        }
+      ]
+    })
+
+    render(
+      <MemoryRouter>
+        <AmapRoutePage />
+      </MemoryRouter>
+    )
+
+    expect(await screen.findByText("室内稳妥")).toBeInTheDocument()
+    expect(screen.getByText("雨天优先室内点位，但候选受限，方案差异较小。")).toBeInTheDocument()
+    expect(screen.getByText("候选受限，方案差异较小")).toBeInTheDocument()
   })
 })

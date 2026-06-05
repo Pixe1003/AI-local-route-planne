@@ -33,7 +33,7 @@ class PoiScoringService:
                 " ".join(profile.route_style) if profile else "",
             ]
         )
-        user_interest = self._user_interest_score(poi, text, profile)
+        user_interest = self._user_interest_score(poi, text, profile, context)
         poi_quality = min((poi.rating or 0) / 5 * 25 + min(poi.review_count / 1200, 1) * 8, 30)
         context_fit = self._context_fit_score(poi, context, profile)
         ugc_match = self._ugc_match_score(poi, text)
@@ -91,7 +91,13 @@ class PoiScoringService:
         features = build_features(poi, breakdown, distance_m=distance or 0, ugc_sim=ugc_sim)
         return get_ranker(settings.ranker_model_path).predict(features)
 
-    def _user_interest_score(self, poi, text: str, profile: UserNeedProfile | None) -> float:
+    def _user_interest_score(
+        self,
+        poi,
+        text: str,
+        profile: UserNeedProfile | None,
+        context: PlanContext | None,
+    ) -> float:
         score = 8.0
         tags = set(poi.tags + poi.suitable_for + poi.atmosphere)
         if profile and profile.party_type and profile.party_type in tags:
@@ -102,8 +108,15 @@ class PoiScoringService:
             score += 7 if poi.category == "restaurant" else 0
         if "咖啡" in text and poi.category == "cafe":
             score += 5
-        if "雨天" in text or "下雨" in text:
+        weather = getattr(context, "weather_condition", "normal") if context is not None else "normal"
+        if "雨天" in text or "下雨" in text or weather == "rainy":
             score += 4 if poi.category in {"culture", "shopping", "cafe", "restaurant"} else -4
+        if weather == "hot":
+            score += 3 if poi.category in {"cafe", "shopping", "culture", "restaurant"} else 0
+            score -= 3 if poi.category in {"outdoor", "scenic"} else 0
+        if weather == "cold":
+            score += 2 if poi.category in {"restaurant", "cafe", "shopping", "culture"} else 0
+            score -= 2 if poi.category in {"outdoor", "scenic"} else 0
         return max(0.0, min(score, 25.0))
 
     def _context_fit_score(

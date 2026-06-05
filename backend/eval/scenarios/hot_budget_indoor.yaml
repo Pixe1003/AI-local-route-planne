@@ -1,0 +1,19 @@
+id: hot_budget_indoor
+request:
+  user_id: eval_user
+  free_text: "hot day, budget friendly indoor route with a light meal, coffee or mall, and not too much commuting"
+  city: hefei
+  date: "2026-05-26"
+  weather_condition: hot
+  time_window:
+    start: "13:00"
+    end: "18:00"
+  budget_per_person: 100
+expected:
+  min_indoor_ratio: 0.75
+  max_budget_violation_ratio: 0.1
+  max_restaurant_count: 2
+  min_non_restaurant_count: 2
+  no_adjacent_restaurants: true
+  min_category_entropy: 1.0
+  max_straight_segment_m: 15000
