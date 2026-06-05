@@ -1,4 +1,4 @@
-import type { PoolResponse, TimeWindow } from "./pool"
+import type { PoolResponse, TimeWindow, WeatherCondition } from "./pool"
 import type { PreferenceSnapshot } from "./preferences"
 import type { RouteChainResponse } from "./route"
 import type { StoryPlan } from "./story"
@@ -22,6 +22,7 @@ export interface AgentRunRequest {
   time_window?: TimeWindow | null
   date: string
   budget_per_person?: number
+  weather_condition?: WeatherCondition
   need_profile?: UserNeedProfile
   origin_latitude?: number
   origin_longitude?: number
@@ -72,6 +73,9 @@ export interface RouteVariant {
   metrics: RouteVariantMetrics
   objective_value: number
   non_dominated: boolean
+  diversity_score: number
+  business_label: string
+  tradeoff_reason: string
   dominated_by?: string[]
 }
 
@@ -96,4 +100,5 @@ export interface AgentRunResponse {
   route_optimization?: RouteOptimizationSummary | null
   route_variants?: RouteVariant[]
   robustness?: RobustnessSummary | null
+  transport_notice?: string | null
 }

@@ -88,6 +88,7 @@ def plan_context_from_pool_request(request: PoolRequest, city: str) -> PlanConte
         origin_latitude=origin[0],
         origin_longitude=origin[1],
         radius_meters=radius_from_request(request),
+        weather_condition=getattr(request, "weather_condition", "normal"),
     )
 
 

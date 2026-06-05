@@ -142,7 +142,7 @@ class Conductor:
                 return Decision(tool="parse_feedback", args={"message": state.goal.raw_query})
             if not state.memory.feedback_applied:
                 return Decision(tool="replan_by_event", args={})
-            if state.memory.route_chain is None:
+            if state.memory.route_chain is None and state.memory.transport_notice is None:
                 return Decision(
                     tool="get_amap_chain",
                     args={
@@ -188,7 +188,7 @@ class Conductor:
             )
         if state.memory.story_plan is None:
             return Decision(tool="compose_story", args={"max_stops": 5})
-        if state.memory.route_chain is None:
+        if state.memory.route_chain is None and state.memory.transport_notice is None:
             return Decision(
                 tool="get_amap_chain",
                 args={

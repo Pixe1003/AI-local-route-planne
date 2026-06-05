@@ -134,7 +134,7 @@ class FakeSemanticRetrieval:
         from app.schemas.rag import EvidenceSnippet, RetrievedPoi
 
         self.calls.append(query)
-        if query.source_types == ["ugc_review"]:
+        if query.source_types == ["poi_profile", "ugc_review"]:
             return [
                 RetrievedPoi(
                     poi_id="hf_scenic",
@@ -148,10 +148,7 @@ class FakeSemanticRetrieval:
                         )
                     ],
                     provenance=["semantic_ugc_review"],
-                )
-            ]
-        if query.source_types == ["poi_profile"]:
-            return [
+                ),
                 RetrievedPoi(
                     poi_id="hf_food",
                     score=0.88,
@@ -192,8 +189,7 @@ def test_pool_service_keeps_semantic_provenance_and_evidence():
     pooled = [poi for category in pool.categories for poi in category.pois]
     scenic = next(poi for poi in pooled if poi.id == "hf_scenic")
 
-    assert ["poi_profile"] in [call.source_types for call in semantic.calls]
-    assert ["ugc_review"] in [call.source_types for call in semantic.calls]
+    assert [call.source_types for call in semantic.calls] == [["poi_profile", "ugc_review"]]
     assert scenic.retrieval_provenance == ["semantic_ugc_review"]
     assert scenic.evidence_snippets[0].source_type == "ugc_review"
     assert scenic.highlight_quote == "review quiet photo park evidence"

@@ -102,6 +102,7 @@ class RouteValidator:
                 ValidationIssue(
                     code="budget_exceeded",
                     message=f"路线估算花费 {route.metrics.total_cost} 元超过预算 {intent.hard_constraints.budget_total} 元。",
+                    severity="error" if intent.hard_constraints.strict_budget else "warning",
                 )
             )
 
@@ -114,6 +115,28 @@ class RouteValidator:
                     target=poi_id,
                 )
             )
+
+        included_avoided = set(intent.avoid_pois) & set(stop_ids)
+        for poi_id in sorted(included_avoided):
+            issues.append(
+                ValidationIssue(
+                    code="avoided_poi_included",
+                    message=f"路线包含用户明确排除的点位 {poi_id}。",
+                    target=poi_id,
+                )
+            )
+
+        if intent.hard_constraints.strict_indoor:
+            outdoor_categories = {"outdoor", "scenic"}
+            for poi in pois:
+                if poi.category in outdoor_categories:
+                    issues.append(
+                        ValidationIssue(
+                            code="strict_indoor_violated",
+                            message=f"{poi.name} 不符合必须室内的硬约束。",
+                            target=poi.id,
+                        )
+                    )
 
         queue_threshold = 45 if intent.soft_preferences.avoid_queue else 60
         if profile and "长时间排队" in profile.avoid:
@@ -129,6 +152,7 @@ class RouteValidator:
                     ValidationIssue(
                         code="queue_threshold_exceeded",
                         message=f"{poi.name} 排队预估 {poi.queue_estimate['weekend_peak']} 分钟超过阈值。",
+                        severity="error" if intent.hard_constraints.strict_queue else "warning",
                         target=poi.id,
                     )
                 )

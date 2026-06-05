@@ -6,6 +6,8 @@ export interface TimeWindow {
   end: string
 }
 
+export type WeatherCondition = "normal" | "rainy" | "hot" | "cold"
+
 export interface PoolRequest {
   user_id: string
   city: string
@@ -15,6 +17,7 @@ export interface PoolRequest {
   pace_style?: string
   party?: string
   budget_per_person?: number
+  weather_condition?: WeatherCondition
   free_text?: string
   need_profile?: UserNeedProfile
   preference_snapshot?: PreferenceSnapshot

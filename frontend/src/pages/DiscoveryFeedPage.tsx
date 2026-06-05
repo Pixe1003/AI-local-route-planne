@@ -12,7 +12,7 @@ import { usePreferenceStore } from "../store/preferenceStore"
 import { useUserStore } from "../store/userStore"
 import type { UserNeedProfile } from "../types/onboarding"
 import type { PreferenceSnapshot } from "../types/preferences"
-import type { PoolRequest } from "../types/pool"
+import type { PoolRequest, WeatherCondition } from "../types/pool"
 import type { UgcFeedItem } from "../types/ugc"
 
 const categoryLabels: Record<string, string> = {
@@ -32,6 +32,19 @@ const originOptions = [
   { id: "xiaoyaojin", label: "逍遥津", latitude: 31.8682, longitude: 117.2952 }
 ]
 
+const weatherOptions: Array<{ value: WeatherCondition; label: string }> = [
+  { value: "normal", label: "晴天/普通" },
+  { value: "rainy", label: "雨天" },
+  { value: "hot", label: "炎热" },
+  { value: "cold", label: "偏冷" }
+]
+
+function todayIso() {
+  const date = new Date()
+  const offsetMs = date.getTimezoneOffset() * 60_000
+  return new Date(date.getTime() - offsetMs).toISOString().slice(0, 10)
+}
+
 export function DiscoveryFeedPage() {
   const navigate = useNavigate()
   const { userId, setNeedProfile } = useUserStore()
@@ -42,10 +55,11 @@ export function DiscoveryFeedPage() {
   const [feedError, setFeedError] = useState<string | null>(null)
   const [panelOpen, setPanelOpen] = useState(false)
   const [query, setQuery] = useState("今天下午想少排队、吃本地菜、顺路拍照")
-  const [date, setDate] = useState("2026-05-08")
+  const [date, setDate] = useState(todayIso)
   const [start, setStart] = useState("14:00")
   const [end, setEnd] = useState("20:00")
   const [budget, setBudget] = useState(180)
+  const [weatherCondition, setWeatherCondition] = useState<WeatherCondition>("normal")
   const [originId, setOriginId] = useState(originOptions[0].id)
   const [radiusMeters, setRadiusMeters] = useState(8000)
   const [systemHealth, setSystemHealth] = useState<SystemHealth | null>(null)
@@ -115,6 +129,7 @@ export function DiscoveryFeedPage() {
     pace_style: "balanced",
     party: "friends",
     budget_per_person: budget,
+    weather_condition: weatherCondition,
     free_text: query,
     need_profile: profile,
     preference_snapshot: snapshot,
@@ -136,6 +151,7 @@ export function DiscoveryFeedPage() {
         date,
         time_window: { start, end },
         budget_per_person: budget,
+        weather_condition: weatherCondition,
         need_profile: profile,
         preference_snapshot: snapshot,
         ...originPayload
@@ -159,6 +175,8 @@ export function DiscoveryFeedPage() {
         agent_steps: agentResult.steps,
         route_variants: agentResult.route_variants ?? [],
         robustness: agentResult.robustness ?? null,
+        transport_notice: agentResult.transport_notice ?? (agentResult.route_chain ? null : "地图路线暂不可用，以下为文字路线建议。"),
+        weather_condition: weatherCondition,
         free_text: query,
         date,
         time_window: { start, end }
@@ -184,6 +202,7 @@ export function DiscoveryFeedPage() {
       source: "ugc_instant_route",
       pool_id: pool.pool_id,
       pool,
+      weather_condition: weatherCondition,
       free_text: query,
       date,
       time_window: { start, end }
@@ -195,9 +214,9 @@ export function DiscoveryFeedPage() {
     <main className="workspace discovery-workspace">
       <section className="discovery-header">
         <div>
-          <span className="eyebrow">UGC 偏好冷启动</span>
+          <span className="eyebrow">合肥本地生活 Demo</span>
           <h1>现在就出发</h1>
-          <p>收藏会模拟历史偏好，路线会优先参考你喜欢过的标签、类别和 POI。</p>
+          <p>演示 UGC 会模拟本地体验样例，路线会结合收藏偏好、距离、排队和天气上下文。</p>
           {systemHealth ? (
             <div className="system-status-row" aria-label="系统状态">
               <span>RAG {systemHealth.rag?.status ?? "unknown"}</span>
@@ -305,6 +324,25 @@ export function DiscoveryFeedPage() {
             <label>
               <span>结束</span>
               <input onChange={event => setEnd(event.target.value)} type="time" value={end} />
+            </label>
+          </div>
+          <div className="form-row">
+            <label>
+              <span>天气/环境</span>
+              <select
+                onChange={event => setWeatherCondition(event.target.value as WeatherCondition)}
+                value={weatherCondition}
+              >
+                {weatherOptions.map(item => (
+                  <option key={item.value} value={item.value}>
+                    {item.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              <span>城市</span>
+              <input readOnly value="合肥 Demo" />
             </label>
           </div>
           <div className="form-row">

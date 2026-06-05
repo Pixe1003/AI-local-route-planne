@@ -1,6 +1,6 @@
 import type { StoryPlan } from "./story"
 import type { AgentToolCall, RobustnessSummary, RouteVariant } from "./agent"
-import type { PoolResponse } from "./pool"
+import type { PoolResponse, WeatherCondition } from "./pool"
 
 export type RouteMode = "walking" | "driving"
 
@@ -79,6 +79,9 @@ export interface AmapRouteRequest {
   agent_steps?: AgentToolCall[]
   route_variants?: RouteVariant[]
   robustness?: RobustnessSummary | null
+  active_variant_label?: string
+  transport_notice?: string | null
+  weather_condition?: WeatherCondition
   free_text?: string
   date?: string
   time_window?: {

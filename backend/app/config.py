@@ -43,6 +43,10 @@ class Settings(BaseSettings):
     ranker_model_path: str = "data/models/ranker.txt"
     startup_warmup_enabled: bool = True
     startup_warmup_query: str = "warmup"
+    semantic_retrieval_timeout_ms: int = 1200
+    budget_first_semantic_timeout_ms: int = 600
+    budget_first_threshold: int = 100
+    semantic_timeout_cooldown_seconds: int = 60
 
     model_config = SettingsConfigDict(
         env_file=(PROJECT_ROOT / ".env", BACKEND_ROOT / ".env"),

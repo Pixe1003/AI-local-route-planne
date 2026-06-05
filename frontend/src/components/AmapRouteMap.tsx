@@ -116,7 +116,7 @@ export function AmapRouteMap({ pois, geojson, mode = "driving" }: AmapRouteMapPr
     return (
       <div className="route-map-fallback">
         <strong>高德 JS Key 未配置</strong>
-        <span>后端仍会生成真实路线；配置前端 Key 后这里会显示高德地图。</span>
+        <span>当前先展示文字路线建议；配置前端 Key 后这里会显示高德地图。</span>
       </div>
     )
   }

@@ -10,3 +10,5 @@ request:
   budget_per_person: 160
 expected:
   must_visit_ids: []
+  max_variant_jaccard_overlap: 0.85
+  min_category_entropy: 0.6

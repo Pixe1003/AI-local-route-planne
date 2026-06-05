@@ -1,6 +1,7 @@
 from uuid import uuid4
 
 from app.repositories.poi_repo import get_poi_repository
+from app.schemas.common import today_iso
 from app.schemas.onboarding import UserNeedProfile
 from app.schemas.plan import (
     AlternativePoi,
@@ -297,7 +298,7 @@ class PlanService:
             return PlanContext.model_validate(request.need_profile.to_plan_context())
         return PlanContext(
             city="hefei",
-            date="2026-05-02",
+            date=today_iso(),
             time_window=TimeWindow(start="13:00", end="21:00"),
             party="friends",
             budget_per_person=None,

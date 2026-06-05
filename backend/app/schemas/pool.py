@@ -3,6 +3,7 @@ from typing import Any, Optional
 
 from pydantic import BaseModel, Field, field_validator
 
+from app.schemas.common import WeatherCondition, today_iso
 from app.schemas.onboarding import UserNeedProfile
 from app.schemas.preferences import PreferenceSnapshot
 from app.schemas.rag import EvidenceSnippet
@@ -28,12 +29,13 @@ class TimeWindow(BaseModel):
 class PoolRequest(BaseModel):
     user_id: str
     city: str
-    date: str = "2026-05-02"
+    date: str = Field(default_factory=today_iso)
     time_window: TimeWindow = Field(default_factory=lambda: TimeWindow(start="13:00", end="21:00"))
     persona_tags: list[str] = Field(default_factory=list)
     pace_style: Optional[str] = None
     party: Optional[str] = None
     budget_per_person: Optional[int] = None
+    weather_condition: WeatherCondition = "normal"
     free_text: Optional[str] = None
     need_profile: Optional[UserNeedProfile] = None
     preference_snapshot: Optional[PreferenceSnapshot] = None

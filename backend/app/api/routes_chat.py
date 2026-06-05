@@ -1,6 +1,7 @@
 from pydantic import BaseModel, Field
 from fastapi import APIRouter
 
+from app.schemas.common import today_iso
 from app.schemas.chat import ChatResponse, ChatTurn
 from app.schemas.pool import TimeWindow
 from app.schemas.preferences import PreferenceSnapshot
@@ -19,7 +20,7 @@ class ChatAdjustRequest(BaseModel):
     target_stop_index: int | None = None
     replacement_poi_id: str | None = None
     city: str = "hefei"
-    date: str = "2026-05-02"
+    date: str = Field(default_factory=today_iso)
     time_window: TimeWindow | None = None
     free_text: str | None = None
     preference_snapshot: PreferenceSnapshot | None = None

@@ -26,6 +26,13 @@ export function AmapRoutePage() {
   useEffect(() => {
     if (!routeRequest || routeRequest.poi_ids.length < 2) return
 
+    if (routeRequest.transport_notice && !routeRequest.route_chain) {
+      setRouteResult(null)
+      setLoading(false)
+      setError(null)
+      return
+    }
+
     if (
       routeRequest.route_chain &&
       routeChainMatchesRequest(routeRequest.route_chain, routeRequest.poi_ids, routeRequest.mode)
@@ -49,8 +56,16 @@ export function AmapRoutePage() {
       })
       .catch(routeError => {
         if (cancelled) return
+        const message = routeError instanceof Error ? routeError.message : "高德路线生成失败"
         setRouteResult(null)
-        setError(routeError instanceof Error ? routeError.message : "高德路线生成失败")
+        setError(message)
+        if (!routeRequest.transport_notice) {
+          setRouteRequest({
+            ...routeRequest,
+            route_chain: null,
+            transport_notice: "地图路线暂不可用，以下为文字路线建议。"
+          })
+        }
       })
       .finally(() => {
         if (!cancelled) setLoading(false)
@@ -63,10 +78,18 @@ export function AmapRoutePage() {
 
   const robustness = routeRequest?.robustness ?? null
   const routeVariants = routeRequest?.route_variants ?? []
-  const [selectedVariantIndex, setSelectedVariantIndex] = useState(0)
-  useEffect(() => {
-    setSelectedVariantIndex(0)
+  const lowVariantDiversity = useMemo(() => {
+    if (routeVariants.length < 2) return false
+    return averageVariantOverlap(routeVariants.map(variant => variant.ordered_ids)) > 0.65
   }, [routeVariants])
+  const [selectedVariantIndex, setSelectedVariantIndex] = useState(0)
+  const routePoiKey = routeRequest?.poi_ids.join("|") ?? ""
+  useEffect(() => {
+    const nextIndex = routePoiKey
+      ? routeVariants.findIndex(variant => variant.ordered_ids.join("|") === routePoiKey)
+      : -1
+    setSelectedVariantIndex(nextIndex >= 0 ? nextIndex : 0)
+  }, [routePoiKey, routeVariants])
   const activeVariantIndex = routeVariants.length
     ? Math.min(selectedVariantIndex, routeVariants.length - 1)
     : -1
@@ -84,12 +107,29 @@ export function AmapRoutePage() {
   }, [routeRequest?.pool])
   const orderedPois = routeResult?.ordered_pois ?? routePoisFromRequest(routeRequest, poolPoiById)
   const totalDistance = routeResult ? formatDistance(routeResult.total_distance_m) : "--"
-  const totalDuration = routeResult ? formatDuration(routeResult.total_duration_s) : "--"
+  const totalDuration = routeResult
+    ? formatDuration(routeResult.total_duration_s)
+    : activeVariant
+      ? `${activeVariant.time_min} 分钟`
+      : "--"
   const pageTitle = useMemo(() => {
     if (storyPlan?.theme) return storyPlan.theme
     if (!routeResult?.ordered_pois.length) return "高德路线规划"
     return routeResult.ordered_pois.map(poi => poi.name).slice(0, 3).join(" → ")
   }, [routeResult, storyPlan])
+
+  const applyVariant = (variant: RouteVariant, index: number) => {
+    setSelectedVariantIndex(index)
+    if (!routeRequest) return
+    setRouteResult(null)
+    setError(null)
+    setRouteRequest({
+      ...routeRequest,
+      poi_ids: variant.ordered_ids,
+      route_chain: null,
+      active_variant_label: variant.label
+    })
+  }
 
   const submitFeedback = async (event: FormEvent) => {
     event.preventDefault()
@@ -226,6 +266,9 @@ export function AmapRoutePage() {
             正在请求高德路线
           </div>
         ) : null}
+        {routeRequest.transport_notice ? (
+          <p className="route-panel-alert">{routeRequest.transport_notice}</p>
+        ) : null}
         {error ? <p className="route-panel-alert error">{error}</p> : null}
         {routeRequest.pool?.meta.data_warning ? (
           <p className="route-panel-alert">{routeRequest.pool.meta.data_warning}</p>
@@ -243,6 +286,9 @@ export function AmapRoutePage() {
             <p className="route-variants-hint">
               非支配解集合：每条方案在兴趣 / 时长 / 花费 / 排队上至少有一个维度比其它更优。
             </p>
+            {lowVariantDiversity ? (
+              <p className="route-panel-alert">候选受限，方案差异较小</p>
+            ) : null}
             <ul className="route-variants-list">
               {routeVariants.map((variant, index) => {
                 const isActive = activeVariantIndex === index
@@ -256,22 +302,24 @@ export function AmapRoutePage() {
                     className={isActive ? "route-variant-card active" : "route-variant-card"}
                     key={`${variant.label}-${index}`}
                   >
-                    <button
-                      className="route-variant-button"
-                      onClick={() => setSelectedVariantIndex(index)}
-                      type="button"
-                    >
+                      <button
+                        className="route-variant-button"
+                        onClick={() => applyVariant(variant, index)}
+                        type="button"
+                      >
                       <header>
-                        <strong>{variantLabel(variant.label)}</strong>
-                        <small>{variant.solver}</small>
+                        <strong>{variant.business_label || variantLabel(variant.label)}</strong>
+                        <small>{variantLabel(variant.label)} · {variant.solver}</small>
                       </header>
                       <div className="route-variant-metrics">
                         <span>兴趣 {variant.interest.toFixed(1)}</span>
                         <span>时长 {variant.time_min} 分</span>
                         <span>花费 ¥{variant.cost}</span>
                         <span>排队 {variant.queue_min} 分</span>
+                        <span>差异 {Math.round((variant.diversity_score ?? 0) * 100)}%</span>
                       </div>
-                      <p className="route-variant-diff">{diff}</p>
+                      <p className="route-variant-diff">{variant.tradeoff_reason || diff}</p>
+                      {variant.tradeoff_reason ? <p className="route-variant-diff">{diff}</p> : null}
                     </button>
                   </li>
                 )
@@ -420,6 +468,20 @@ function describeVariantDiff(candidate: RouteVariant, reference: RouteVariant): 
     parts.push(`${queueDiff > 0 ? "多" : "少"} ${Math.abs(queueDiff)} 分排队`)
   }
   return parts.length ? `相比当前 ${parts.join("、")}` : "与当前几乎持平"
+}
+
+function averageVariantOverlap(routes: string[][]): number {
+  const overlaps: number[] = []
+  routes.forEach((left, index) => {
+    routes.slice(index + 1).forEach(right => {
+      const leftSet = new Set(left)
+      const rightSet = new Set(right)
+      const intersection = [...leftSet].filter(item => rightSet.has(item)).length
+      const union = new Set([...left, ...right]).size || 1
+      overlaps.push(intersection / union)
+    })
+  })
+  return overlaps.length ? overlaps.reduce((sum, value) => sum + value, 0) / overlaps.length : 0
 }
 
 function routePoisFromRequest(

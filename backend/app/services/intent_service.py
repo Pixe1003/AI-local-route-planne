@@ -26,6 +26,29 @@ class IntentService:
         budget_total = context.budget_per_person
         if budget_total is not None and context.party == "couple":
             budget_total *= 2
+        strict_budget = any(
+            word in text
+            for word in ["严格预算", "预算不能超", "不能超预算", "不超过", "控制在", "预算上限", "no expensive", "strict budget"]
+        )
+        strict_queue = any(word in text for word in ["绝不排队", "不能排队", "不要排队", "不排队", "avoid waiting lines", "no waiting"])
+        strict_indoor = any(word in text for word in ["必须室内", "只要室内", "全室内", "不要户外", "indoor only"])
+        experience_required = any(
+            word in text
+            for word in [
+                "文化",
+                "博物馆",
+                "展览",
+                "景点",
+                "娱乐",
+                "夜景",
+                "商场",
+                "购物",
+                "culture",
+                "museum",
+                "shopping",
+                "entertainment",
+            ]
+        )
         fallback = StructuredIntent(
             hard_constraints=HardConstraints(
                 start_time=context.time_window.start,
@@ -33,11 +56,15 @@ class IntentService:
                 budget_total=budget_total,
                 transport_mode="mixed",
                 must_include_meal=food,
+                must_include_experience=experience_required,
+                strict_budget=strict_budget,
+                strict_queue=strict_queue,
+                strict_indoor=strict_indoor,
             ),
             soft_preferences=SoftPreferences(
                 pace=pace,
-                avoid_queue=avoid_queue,
-                weather_sensitive=any(word in text for word in ["下雨", "雨天", "室内"]),
+                avoid_queue=avoid_queue or strict_queue,
+                weather_sensitive=context.weather_condition != "normal" or any(word in text for word in ["下雨", "雨天", "室内", "热", "冷"]),
                 photography_priority=photography or context.party == "couple",
                 food_diversity=food,
                 custom_notes=[text] if text else [],

@@ -1,0 +1,18 @@
+id: photo_cafe_culture
+request:
+  user_id: eval_user
+  free_text: "half day photo route with coffee, culture, and one relaxed food stop, avoid making it all restaurants"
+  city: hefei
+  date: "2026-05-26"
+  time_window:
+    start: "14:00"
+    end: "19:00"
+  budget_per_person: 150
+expected:
+  max_restaurant_count: 2
+  min_non_restaurant_count: 2
+  no_adjacent_restaurants: true
+  unique_restaurant_subcategories: true
+  min_category_entropy: 1.0
+  max_variant_jaccard_overlap: 0.85
+  max_straight_segment_m: 12000

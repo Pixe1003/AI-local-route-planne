@@ -8,3 +8,7 @@ request:
     start: "10:00"
     end: "15:00"
   budget_per_person: 80
+expected:
+  max_budget_violation_ratio: 0.25
+  max_variant_jaccard_overlap: 0.85
+  min_category_entropy: 0.6

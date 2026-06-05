@@ -59,6 +59,7 @@ class AgentMemory(BaseModel):
     route_optimization: dict[str, Any] | None = None
     route_variants: list[dict[str, Any]] = Field(default_factory=list)
     robustness: dict[str, Any] | None = None
+    transport_notice: str | None = None
     episodic_summary: list[SessionSummary] = Field(default_factory=list)
     user_facts: UserFacts | None = None
     similar_sessions: list[SimilarSessionHit] = Field(default_factory=list)

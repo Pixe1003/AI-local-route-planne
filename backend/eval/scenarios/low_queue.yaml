@@ -8,3 +8,6 @@ request:
     start: "11:00"
     end: "17:00"
   budget_per_person: 150
+expected:
+  max_avg_queue_min: 45
+  max_variant_jaccard_overlap: 0.85

@@ -1,0 +1,18 @@
+id: shopping_dinner_evening
+request:
+  user_id: eval_user
+  free_text: "evening shopping and dinner route: start with mall or culture, eat once, walk around, then optional second different food stop"
+  city: hefei
+  date: "2026-05-26"
+  time_window:
+    start: "17:00"
+    end: "21:30"
+  budget_per_person: 220
+expected:
+  max_restaurant_count: 2
+  min_non_restaurant_count: 2
+  no_adjacent_restaurants: true
+  unique_restaurant_subcategories: true
+  min_category_entropy: 1.0
+  max_variant_jaccard_overlap: 0.85
+  max_straight_segment_m: 12000

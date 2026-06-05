@@ -3,7 +3,7 @@
 > 输入一句自然语言，输出 5 条带 Pareto 权衡、UGC 证据、蒙特卡洛准时概率的本地一日路线。
 > 在 5 个基准场景上 **硬约束满足率 100% / 解释忠实度 1.0 / 与最优解 gap 0.001 / Ranker NDCG +95%**，全流程指标可一键复现、CI 可拦回归。
 
-[技术评审版总结](docs/项目总结-技术评审版.md) · [改造方案](docs/AIroute-改造方案.md) · [响应延迟分析](docs/响应延迟优化与待补数据.md) · [开发计划](docs/agent_development_plan.md) · [架构详解](docs/current-architecture.md)
+[技术评审版总结](docs/项目总结-技术评审版.md) · [业务 Demo 评测](docs/business-demo-eval.md) · [改造方案](docs/AIroute-改造方案.md) · [响应延迟分析](docs/响应延迟优化与待补数据.md) · [开发计划](docs/agent_development_plan.md) · [架构详解](docs/current-architecture.md)
 
 ---
 
@@ -65,6 +65,9 @@ flowchart LR
 | 解释忠实度 | **1.000** | ≥ 90% ✅ |
 | 路线相对 CP-SAT 精确解 gap | **0.001–0.002** | ≤ 0.5 ✅ |
 | Pareto 变体数 / 场景 | **5** 条非支配解 | ≥ 3 ✅ |
+| Pareto 平均 POI overlap | `avg_variant_jaccard_overlap` | 越低代表方案差异越大 |
+| 路线品类熵 | `avg_category_entropy` | 衡量是否过度固定模板 |
+| 场景业务预期通过率 | `scenario_expectation_pass_rate` | 雨天室内 / 少排队 / 预算紧等 |
 | 蒙特卡洛准时概率（500 次模拟） | **0.951** | — |
 | Ranker NDCG@5（vs 规则基线） | **0.4725 vs 0.2422 = +95.1%** | ≥ +3% ✅ |
 | **CI gate** | **PASS** | |
@@ -80,6 +83,10 @@ flowchart LR
 | 其它 9 个工具合计 | < 100 ms | — |
 
 完整方法学、阈值演变史见 [`docs/响应速度测试设计.md`](docs/响应速度测试设计.md) 与 [`docs/响应延迟优化与待补数据.md`](docs/响应延迟优化与待补数据.md)。
+
+### 业务 Demo 验收
+
+工程指标用于防回归，不等同于真实线上业务效果。`constraint_satisfaction_rate=1.0` 只说明路线通过合法性校验，不代表业务路线足够丰富。合肥 Demo 另按 [`docs/business-demo-eval.md`](docs/business-demo-eval.md) 验收：演示 UGC 覆盖、天气影响、反馈调整、Pareto 方案切换、方案多样性、无高德 Key 文字路线降级和推荐理由证据率。
 
 ---
 
@@ -178,6 +185,7 @@ npm run build
 ### Demo 数据预热
 
 ```powershell
+python scripts\generate_demo_ugc.py       # 生成合肥演示 UGC JSONL（不抓取外部平台）
 python scripts\warmup_demo_sessions.py    # 为 demo_user 灌一些历史会话，方便演示跨会话记忆
 ```
 

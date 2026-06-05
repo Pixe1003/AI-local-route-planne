@@ -3,6 +3,7 @@ from typing import Literal, Optional
 from pydantic import BaseModel, Field
 
 from app.schemas.onboarding import UserNeedProfile
+from app.schemas.common import WeatherCondition
 from app.schemas.pool import TimeWindow
 from app.schemas.preferences import PreferenceSnapshot
 
@@ -16,6 +17,7 @@ class PlanContext(BaseModel):
     origin_latitude: Optional[float] = None
     origin_longitude: Optional[float] = None
     radius_meters: Optional[int] = None
+    weather_condition: WeatherCondition = "normal"
 
 
 class HardConstraints(BaseModel):
@@ -24,7 +26,10 @@ class HardConstraints(BaseModel):
     budget_total: Optional[int] = None
     transport_mode: str = "mixed"
     must_include_meal: bool = False
-    must_include_experience: bool = True
+    must_include_experience: bool = False
+    strict_budget: bool = False
+    strict_queue: bool = False
+    strict_indoor: bool = False
 
 
 class SoftPreferences(BaseModel):

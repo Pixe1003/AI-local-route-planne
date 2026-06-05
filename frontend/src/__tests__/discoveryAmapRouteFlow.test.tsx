@@ -67,6 +67,12 @@ vi.mock("../store/amapRouteStore", () => ({
 
 import { DiscoveryFeedPage } from "../pages/DiscoveryFeedPage"
 
+function todayIso() {
+  const date = new Date()
+  const offsetMs = date.getTimezoneOffset() * 60_000
+  return new Date(date.getTime() - offsetMs).toISOString().slice(0, 10)
+}
+
 describe("DiscoveryFeedPage Amap route flow", () => {
   beforeEach(() => {
     mocks.fetchUgcFeed.mockResolvedValue([])
@@ -142,7 +148,9 @@ describe("DiscoveryFeedPage Amap route flow", () => {
         expect.objectContaining({
           user_id: "mock_user",
           city: "hefei",
+          date: todayIso(),
           free_text: expect.stringContaining("少排队"),
+          weather_condition: "normal",
           origin_latitude: 31.8206,
           origin_longitude: 117.2272,
           radius_meters: 8000,
@@ -164,7 +172,9 @@ describe("DiscoveryFeedPage Amap route flow", () => {
           poi_ids: ["sh_poi_001", "sh_poi_002", "sh_poi_003"],
           source: "ugc_instant_route",
           session_id: "agent_session_1",
-          pool: expect.objectContaining({ pool_id: "pool_1" })
+          pool: expect.objectContaining({ pool_id: "pool_1" }),
+          transport_notice: "地图路线暂不可用，以下为文字路线建议。",
+          weather_condition: "normal"
         })
       )
     })

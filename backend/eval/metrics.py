@@ -18,6 +18,11 @@ class EvalResult:
     ndcg_at_5: float | None = None
     route_variant_count: int = 0
     on_time_prob: float | None = None
+    variant_jaccard_overlap: float | None = None
+    category_entropy: float | None = None
+    business_area_spread: float | None = None
+    soft_constraint_tradeoff_score: float | None = None
+    scenario_expectation_passed: bool = True
 
 
 def explanation_faithfulness(story: Any, poi_by_id: dict[str, Any]) -> float:
@@ -36,6 +41,14 @@ def aggregate(results: list[EvalResult]) -> dict[str, float]:
     gaps = [item.route_quality_gap for item in results if item.route_quality_gap is not None]
     ndcgs = [item.ndcg_at_5 for item in results if item.ndcg_at_5 is not None]
     on_time_probs = [item.on_time_prob for item in results if item.on_time_prob is not None]
+    overlaps = [item.variant_jaccard_overlap for item in results if item.variant_jaccard_overlap is not None]
+    entropies = [item.category_entropy for item in results if item.category_entropy is not None]
+    area_spreads = [item.business_area_spread for item in results if item.business_area_spread is not None]
+    tradeoff_scores = [
+        item.soft_constraint_tradeoff_score
+        for item in results
+        if item.soft_constraint_tradeoff_score is not None
+    ]
     return {
         "scenario_count": float(len(results)),
         "feasible_rate": round(sum(item.feasible for item in results) / total, 3),
@@ -52,6 +65,17 @@ def aggregate(results: list[EvalResult]) -> dict[str, float]:
         "avg_ndcg_at_5": round(sum(ndcgs) / max(len(ndcgs), 1), 3),
         "avg_route_variant_count": round(sum(item.route_variant_count for item in results) / total, 2),
         "avg_on_time_prob": round(sum(on_time_probs) / max(len(on_time_probs), 1), 3),
+        "avg_variant_jaccard_overlap": round(sum(overlaps) / max(len(overlaps), 1), 3),
+        "avg_category_entropy": round(sum(entropies) / max(len(entropies), 1), 3),
+        "avg_business_area_spread": round(sum(area_spreads) / max(len(area_spreads), 1), 3),
+        "avg_soft_constraint_tradeoff_score": round(
+            sum(tradeoff_scores) / max(len(tradeoff_scores), 1),
+            3,
+        ),
+        "scenario_expectation_pass_rate": round(
+            sum(item.scenario_expectation_passed for item in results) / total,
+            3,
+        ),
     }
 
 
