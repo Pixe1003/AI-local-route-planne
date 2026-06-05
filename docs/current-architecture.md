@@ -1,61 +1,170 @@
 # AIroute 当前架构
 
-本文描述 `codex/product-rag-amap-demo` 分支当前真实链路，不把计划项写成已完成项。
+本文描述当前合肥本地生活 Agent Demo 的真实链路。项目目标不是做一个通用旅游网站，而是做一个可迁移的路线智能体系统：先在合肥 Demo 跑通 UGC、结构化 POI、约束求解、地图降级、继续对话和离线评测，再替换真实数据源和线上基础设施。
+
+---
 
 ## 主链路
 
 ```mermaid
 flowchart LR
-  feed["UGC Feed"] --> prefs["PreferenceSnapshot"]
-  prefs --> pool["/api/pool/generate\n多通道候选池"]
-  pool --> route["/api/route/chain\n高德路线链 API"]
-  route --> map["AmapRoutePage\n地图与路线展示"]
-  map --> feedback["/api/chat/adjust\n反馈调整 POI 顺序"]
-  feedback --> route
+  ui["React Demo UI\n合肥/当天/天气/预算/出发点"] --> run["POST /api/agent/run"]
+  run --> conductor["Agent Conductor\nPlan-Act-Observe"]
+  conductor --> intent["parse_intent"]
+  conductor --> evidence["search_ugc_evidence"]
+  conductor --> pool["recommend_pool"]
+  conductor --> solve["solve_constrained_route"]
+  conductor --> story["compose_story"]
+  conductor --> amap["get_amap_chain"]
+  conductor --> validate["validate_route"]
+  conductor --> robust["assess_robustness"]
+  conductor --> finish["finish"]
+
+  pool --> sqlite["SQLite/FTS/bucket\n结构化召回"]
+  pool --> faiss["FAISS\npoi_profile + ugc_review 单次查询"]
+  pool --> guard["SemanticRetrievalGuard\ntimeout/cooldown fallback"]
+  solve --> optw["OPTW + CP-SAT\nPareto variants"]
+  solve --> rhythm["路线节奏守卫\n餐饮<=2 + 品类穿插"]
+  amap --> route["高德路线链"]
+  amap --> fallback["文字路线降级"]
+  finish --> page["AmapRoutePage\n方案卡/地图/文字路线/继续对话"]
 ```
 
-## 后端
+---
+
+## 后端模块
 
 ```text
 backend/app
-  api/routes_pool.py              候选池 API
-  api/routes_route.py             高德 route chain API
-  api/routes_agent.py             Agent run/stream API
-  repositories/poi_repo.py        seed + SQLite POI 聚合仓库
-  repositories/sqlite_poi_repo.py app_pois + poi_feature_index + ugc_evidence_index loader
-  repositories/faiss_index.py     FAISS 向量索引读取
-  repositories/faiss_meta.py      FAISS JSONL sidecar metadata
-  repositories/rag_build.py       poi_profile + ugc_review 文档构建
-  services/retrieval_service.py   FAISS 召回聚合与 evidence/provenance 输出
-  services/pool_service.py        语义召回 + SQLite FTS/bucket + 规则兜底融合
-  services/solver_service.py      greedy 行程求解
-  services/route_validator.py     intent-driven 餐饮/体验约束校验
-  services/amap/                  高德 Web Service client/cache
-  agent/                          Conductor、tool、memory 相关模块
-  observability/                  logging、metrics、tracing 基础设施
+  agent/
+    conductor.py                 Agent 工具编排、trace、fallback
+    tools.py                     parse/retrieve/pool/solve/story/amap/validate/feedback tools
+    specialists/story_agent.py   结构化 story plan 和推荐理由
+    store.py / user_memory.py    会话、用户事实和跨会话记忆
+
+  api/
+    routes_agent.py              /api/agent/run、adjust、trace、stream、tools、cost
+    routes_pool.py               候选池 API
+    routes_route.py              高德路线链 API
+    routes_ugc.py                UGC 发现流
+
+  services/
+    pool_service.py              结构化召回、预算优先、语义检索 guard、候选融合
+    poi_scoring_service.py       预算、天气、排队、距离、偏好打分
+    retrieval_service.py         FAISS 查询和 evidence/provenance 聚合
+    route_validator.py           硬约束和路线合法性校验
+    amap/                        高德 Web Service client/cache/schema
+
+  solver/
+    optw.py                      时间窗约束路线求解
+    pareto.py                    多目标 Pareto 方案、差异过滤、业务标签
+    distance.py                  高德距离优先，失败时 haversine fallback
+
+  repositories/
+    poi_repo.py                  POI 聚合仓库
+    sqlite_poi_repo.py           hefei_pois.sqlite、poi_feature_index、ugc_evidence_index
+    faiss_index.py               FAISS index reader
+    session_vector_repo.py       跨会话相似召回
 ```
 
-## 检索与候选池
+---
 
-- POI 主数据来自可用的 SQLite 文件和 `load_seed_pois()`；成品验收以真实 `hefei_pois.sqlite` 为准，seed fallback 只作为降级。
-- 可选 FAISS RAG 使用同一索引目录下的 `index.faiss` + `meta.jsonl`，文档类型是 `poi_profile` 和 `ugc_review`。
-- `RetrievalService` 按 `poi_id` 聚合召回结果，输出 `semantic_poi_profile` / `semantic_ugc_review` provenance 和 top evidence。
-- `PoolService` 融合 semantic POI、semantic UGC、SQLite FTS/bucket、seed fallback，并把 evidence/provenance/distance 暴露给前端 pool 类型。
-- 前端默认带合肥市中心出发点和半径，也允许在生成面板切换出发点；`UserNeedProfile.destination` 会保存起点经纬度，后端在缺少显式 origin 时按 profile 或合肥默认起点兜底。
-- 候选池排序的距离惩罚只来自 `PoiScoringService` 的 profile breakdown；外层 pool score 不再额外扣一次距离，避免远距离 POI 被双重惩罚。
+## 召回架构
 
-## 路线与距离
+`PoolService.generate_pool` 当前先走结构化召回，再按需要补一次语义检索：
 
-- `/api/route/chain` 已接高德 Web Service client；无 key 时返回配置错误，有缓存和 mock 测试覆盖。
-- `solver/distance.py` 已优先尝试高德距离/耗时，失败或无 key 时降级到 haversine，并在 `Transport.source` 标记 `amap` 或 `fallback`。
-- `solver_service.py` 当前仍是 greedy 求解；P2-1 优化器尚未实现。
-- `route_replanner.py` 仍按当前 POI 列表重排/替换，没有“已完成站点锁定”概念；P2-3 尚未实现。
-- `route_validator.py` 对缺失营业时间只发 `opening_hours_unknown` warning，并按 `poi_id` 去重；真实数据 open_hours 覆盖不足时不会把 unknown 当成 closed error。
+1. `PoiRetrievalService.retrieve_with_stats` 从 SQLite/FTS/feature bucket 取候选。
+2. 如果请求低预算，或文本包含“预算紧/控制预算/budget friendly/under”等意图，进入 `budget_first`。
+3. `budget_first` 下结构化候选充足时跳过 FAISS，避免 HuggingFace/SentenceTransformer 冷启动阻塞。
+4. 候选不足时只补一次 FAISS 查询，`source_types=["poi_profile", "ugc_review"]` 合并查询。
+5. 语义检索被 `SemanticRetrievalGuard` 包裹，超时、异常、无索引、冷却期内都返回空语义候选，整体请求继续走结构化候选。
+6. `last_retrieval_stats` 记录 `retrieval_mode / structured_candidates / semantic_candidates / semantic_status / semantic_elapsed_ms / semantic_query_count`。
+
+普通场景语义候选优先、结构化候选补充；预算优先场景结构化候选优先、语义候选只补缺口。
+
+---
+
+## 路线求解与多样性
+
+路线生成分三步：
+
+1. `optw.py` 在时间窗、预算、必去/避开、营业状态、最少 POI 等条件下求解。
+2. `pareto.py` 生成多个目标 profile 的非支配方案，并通过 Jaccard overlap 做差异过滤。
+3. `agent/tools.py` 对最终站点顺序做业务节奏修正：
+   - 正式餐饮 POI 不超过 2 个。
+   - 餐饮之间穿插景点/文化/购物/娱乐等非餐饮点。
+   - 两个餐饮点尽量避免同子类。
+   - 咖啡作为轻休闲点，不计入正式餐饮上限。
+   - 方案卡带 `business_label / diversity_score / tradeoff_reason`。
+
+这套逻辑解决的是“约束满足率很高但路线同质化”的问题。合法性由硬约束守住，多样性由排序、过滤和路线节奏守卫提升。
+
+---
+
+## 高德路线与降级
+
+正常情况下：
+
+- `/api/route/chain` 调高德 Web Service 获取实路网距离、耗时和 polyline。
+- `AmapRoutePage` 展示地图、站点、总耗时、总距离和每段通勤。
+- 点击不同 Pareto 方案会切换 `ordered_ids`，清空旧 `route_chain` 并重新请求路线。
+
+高德 key 缺失或调用失败时：
+
+- `/api/agent/run` 不整体失败。
+- 响应保留 `ordered_poi_ids`、POI 列表、估算通勤和推荐理由。
+- `route_chain=null`，前端显示“地图路线暂不可用，以下为文字路线建议”。
+- 用户仍可继续对话调整路线。
+
+---
+
+## 前端页面
+
+| 页面 | 责任 |
+| --- | --- |
+| `DiscoveryFeedPage` | 合肥 Demo 发现流、演示 UGC、本地偏好输入入口 |
+| `AmapRoutePage` | 路线生成、Pareto 方案卡、地图/文字路线、继续对话 |
+| `ProjectReviewPage` | 项目复盘展示页，面向评审/面试讲解 |
+
+前端默认当天日期，城市固定合肥，天气由用户手动选择。方案卡展示业务标签和取舍原因；当候选不足导致方案差异较小时，页面给出提示。
+
+---
+
+## 评测与质量门禁
+
+当前评测由 `backend/eval/run_eval.py` 负责，场景 YAML 位于 `backend/eval/scenarios/`。
+
+已覆盖 10 个业务场景：
+
+- 低预算半日路线
+- 雨天家庭室内路线
+- 餐饮穿插护栏
+- 半日本地美食
+- 炎热低预算室内路线
+- 少排队效率路线
+- 必去点路线
+- 拍照咖啡文化路线
+- 雨天亲子短路线
+- 晚间购物晚餐路线
+
+主要指标包括：
+
+- `constraint_satisfaction_rate`
+- `explanation_faithfulness`
+- `avg_variant_jaccard_overlap`
+- `avg_category_entropy`
+- `avg_business_area_spread`
+- `avg_soft_constraint_tradeoff_score`
+- `scenario_expectation_pass_rate`
+
+`constraint_satisfaction_rate=1.0` 只代表合法性通过；业务是否成立还要看品类熵、方案重叠度、场景预期和文字/地图降级。
+
+---
 
 ## 已知缺口
 
-- 真实数据 smoke 已支持 `AIROUTE_REAL_DATA_DIR`；测试会用真实 SQLite/UGC 和 deterministic fake embedder 跑通 `build_faiss_rag`，完整真实 embedding 模型全量构建仍依赖本机模型下载和数据文件。
-- Agent memory 模块保留自 `origin/main`，但没有和统一 FAISS retrieval contract 做新的深度接入。
-- Observability 基础模块和 `/health` 存在，但统一检索链路的完整 trace/metrics 还没补齐。
-- Embedding cache 存在，检索结果级缓存还没实现。
-- Quality gates / prompt regression 文件存在，但本 PR 没有新增 CI gate wiring。
+- 地理紧凑性仍需增强：个别场景餐饮节奏正确，但某段直线距离偏长。
+- 雨天亲子短路线的室内品类丰富度不足，候选替换策略需要更关注品类均衡。
+- `compose_story` 仍是主要耗时来源，下一步可做模板化/缓存/更轻量的 story 生成。
+- 当前 UGC 是演示数据，未来接入真实本地生活数据源时需要替换 `simulated_ugc` 管道。
+- 暂不做登录、订单、支付、优惠券和生产数据库迁移。
