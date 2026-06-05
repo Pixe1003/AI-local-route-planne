@@ -124,7 +124,7 @@ backend/app
 | --- | --- |
 | `DiscoveryFeedPage` | 合肥 Demo 发现流、演示 UGC、本地偏好输入入口 |
 | `AmapRoutePage` | 路线生成、Pareto 方案卡、地图/文字路线、继续对话 |
-| `ProjectReviewPage` | 项目复盘展示页，面向评审/面试讲解 |
+| `ProjectReviewPage` | 项目复盘展示页，面向黑客松评审和 Demo 讲解 |
 
 前端默认当天日期，城市固定合肥，天气由用户手动选择。方案卡展示业务标签和取舍原因；当候选不足导致方案差异较小时，页面给出提示。
 

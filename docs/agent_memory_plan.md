@@ -1177,11 +1177,11 @@ curl -X POST localhost:8000/api/agent/run -d '{
 curl localhost:8000/api/agent/user/demo_user/facts | jq
 ```
 
-### F.3 文档与简历
+### F.3 文档与比赛展示
 
-更新 `docs/agent_development_plan.md` 加一节 Memory System，更新 README 架构图。简历 bullet 改成：
+更新 `docs/agent_development_plan.md` 加一节 Memory System，更新 README 架构图，并补充比赛展示用的技术说明：
 
-> Designed a **3-layer agent memory system**: per-session working memory (AgentState), persistent episodic memory in SQLite with cross-session summary injection into prompts, semantic user facts (rejected POIs, typical budget/party/category preferences) derived from history and auto-applied as soft constraints, and **vector-based session recall** using FAISS over BGE embeddings of past route narratives. Verified by E2E tests showing the agent skips previously-rejected POIs and proposes thematically diverse routes across sessions.
+> AIroute includes a **3-layer agent memory system**: per-session working memory (AgentState), persistent episodic memory in SQLite with cross-session summary injection into prompts, semantic user facts (rejected POIs, typical budget/party/category preferences) derived from history and auto-applied as soft constraints, and **vector-based session recall** using FAISS over BGE embeddings of past route narratives. The demo verifies that the agent skips previously rejected POIs and proposes thematically diverse routes across sessions.
 
 ---
 
@@ -1192,7 +1192,7 @@ curl localhost:8000/api/agent/user/demo_user/facts | jq
 | 1 | A 阶段 schema + AgentMemory 扩展 | B 阶段 episodic_summary + StoryAgent prompt 集成 | `test_episodic_memory.py` 全绿 |
 | 2 | C 阶段 UserFacts derive + cache + 注入 | C 阶段 fact_alignment 评分 + API 端点 | `test_user_facts.py` 全绿、facts API 返回正确 |
 | 3 | D 阶段 SessionVectorRepo + save_state 钩 | D 阶段 recall 工具 + prompt 集成 | `test_session_vector.py` 全绿、rebuild 脚本能跑 |
-| 4 | E 阶段 E2E 测试 + 前端 UserMemoryPanel | F 阶段 手动验证 + 文档 + 简历更新 | 所有测试 ≥ 30 个全绿、demo 流程跑通 |
+| 4 | E 阶段 E2E 测试 + 前端 UserMemoryPanel | F 阶段 手动验证 + 文档 + Demo 说明更新 | 所有测试 ≥ 30 个全绿、demo 流程跑通 |
 
 ---
 
@@ -1270,6 +1270,6 @@ data/processed/sessions/{user_id}.meta.jsonl
 
 1. **A → B → C → D 顺序不能跳**。Schema 不齐时下层模块编译都通不过；情景记忆是语义记忆的数据源；语义记忆是向量记忆的特征源。
 2. **每阶段必须先跑测试再 commit**。三层记忆容易引入数据污染（譬如 facts cache 没失效、向量索引脏数据），测试是唯一防线。
-3. **D 阶段可以单独裁剪**。如果时间紧到只剩两天，可以做完 A+B+C 把 D 推后——三层减到两层在简历上仍然能写 "episodic + semantic memory"，是合理的最小可用版。
+3. **D 阶段可以单独裁剪**。如果时间紧到只剩两天，可以做完 A+B+C 把 D 推后——三层减到两层仍然能支撑 "episodic + semantic memory" 的核心 Demo，是合理的最小可用版。
 
 4 天后，AIroute 就从"多 Agent + RAG"升级到"多 Agent + RAG + 三层 Memory"的完整 agent 系统形态。
