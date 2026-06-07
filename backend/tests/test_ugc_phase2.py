@@ -67,6 +67,18 @@ def test_ugc_feed_service_prefers_real_ugc_reviews(tmp_path: Path) -> None:
     assert cards[0].tags[:2] == ["cafe", "baohe"]
 
 
+def test_ugc_feed_cards_include_repository_coordinates(tmp_path: Path) -> None:
+    data_path = tmp_path / "empty_ugc.jsonl"
+    data_path.write_text("", encoding="utf-8")
+
+    service = UgcFeedService(ugc_repo=UgcVectorRepo(data_path))
+    card = service.list_feed(city="hefei", limit=1)[0]
+    poi = service.repo.get(card.poi_id)
+
+    assert card.latitude == poi.latitude
+    assert card.longitude == poi.longitude
+
+
 def test_ugc_feed_balances_food_experience_and_shopping_cards(tmp_path: Path) -> None:
     rows = []
     for index in range(18):

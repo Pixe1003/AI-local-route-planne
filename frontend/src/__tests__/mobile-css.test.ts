@@ -9,8 +9,12 @@ const css = readFileSync(resolve(currentDir, "../styles/globals.css"), "utf-8")
 describe("mobile layout contract", () => {
   it("keeps UGC onboarding and Amap route content usable on phone screens", () => {
     expect(css).toContain("@media (max-width: 760px)")
-    expect(css).toContain(".instant-panel")
+    expect(css).toContain(".service-workbench")
+    expect(css).toContain(".workbench-command-panel")
+    expect(css).toContain(".app-topbar")
+    expect(css).toContain(".plan-basket")
     expect(css).toContain(".amap-route-page")
+    expect(css).toContain(".route-service-shell")
     expect(css).toContain(".route-map-shell")
     expect(css).toContain("env(safe-area-inset-bottom)")
     expect(css).toContain(".route-feedback-form")

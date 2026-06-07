@@ -22,16 +22,14 @@ export function AmapRoutePage() {
   const [feedback, setFeedback] = useState("")
   const [feedbackMessage, setFeedbackMessage] = useState<string | null>(null)
   const [feedbackLoading, setFeedbackLoading] = useState(false)
+  const [routeFallbackNotice, setRouteFallbackNotice] = useState<string | null>(null)
 
   useEffect(() => {
-    if (!routeRequest || routeRequest.poi_ids.length < 2) return
-
-    if (routeRequest.transport_notice && !routeRequest.route_chain) {
-      setRouteResult(null)
-      setLoading(false)
-      setError(null)
+    if (!routeRequest || routeRequest.poi_ids.length < 2) {
+      setRouteFallbackNotice(null)
       return
     }
+    setRouteFallbackNotice(null)
 
     if (
       routeRequest.route_chain &&
@@ -53,19 +51,14 @@ export function AmapRoutePage() {
       .then(result => {
         if (cancelled) return
         setRouteResult(result)
+        setRouteFallbackNotice(null)
       })
       .catch(routeError => {
         if (cancelled) return
         const message = routeError instanceof Error ? routeError.message : "高德路线生成失败"
         setRouteResult(null)
         setError(message)
-        if (!routeRequest.transport_notice) {
-          setRouteRequest({
-            ...routeRequest,
-            route_chain: null,
-            transport_notice: "地图路线暂不可用，以下为文字路线建议。"
-          })
-        }
+        setRouteFallbackNotice(routeRequest.transport_notice ?? "地图路线暂不可用，以下为文字路线建议。")
       })
       .finally(() => {
         if (!cancelled) setLoading(false)
@@ -117,17 +110,20 @@ export function AmapRoutePage() {
     if (!routeResult?.ordered_pois.length) return "高德路线规划"
     return routeResult.ordered_pois.map(poi => poi.name).slice(0, 3).join(" → ")
   }, [routeResult, storyPlan])
+  const transportNotice = routeResult ? null : routeFallbackNotice ?? routeRequest?.transport_notice ?? null
 
   const applyVariant = (variant: RouteVariant, index: number) => {
     setSelectedVariantIndex(index)
     if (!routeRequest) return
+    setRouteFallbackNotice(null)
     setRouteResult(null)
     setError(null)
     setRouteRequest({
       ...routeRequest,
       poi_ids: variant.ordered_ids,
       route_chain: null,
-      active_variant_label: variant.label
+      active_variant_label: variant.label,
+      transport_notice: null
     })
   }
 
@@ -155,6 +151,7 @@ export function AmapRoutePage() {
             agent_steps: response.steps,
             route_variants: response.route_variants ?? routeRequest.route_variants ?? [],
             robustness: response.robustness ?? routeRequest.robustness ?? null,
+            transport_notice: response.transport_notice ?? null,
             free_text: routeRequest.free_text
               ? `${routeRequest.free_text}；${feedback.trim()}`
               : feedback.trim()
@@ -180,6 +177,7 @@ export function AmapRoutePage() {
           ...routeRequest,
           poi_ids: nextPoiIds,
           route_chain: null,
+          transport_notice: null,
           free_text: routeRequest.free_text
             ? `${routeRequest.free_text}；${feedback.trim()}`
             : feedback.trim()
@@ -210,7 +208,7 @@ export function AmapRoutePage() {
   }
 
   return (
-    <main className="amap-route-page">
+    <main className="amap-route-page route-service-shell">
       <section className="amap-route-map-area">
         <AmapRouteMap geojson={routeResult?.geojson ?? null} mode={routeRequest.mode} pois={orderedPois} />
       </section>
@@ -225,7 +223,7 @@ export function AmapRoutePage() {
           <p>{storyPlan?.narrative ?? routeRequest.free_text ?? "基于 UGC 偏好和推荐池 POI 生成路线。"}</p>
         </div>
 
-        <div className="route-summary-grid">
+        <div className="route-service-summary route-summary-grid">
           <span>
             <strong>{totalDistance}</strong>
             总距离
@@ -266,8 +264,8 @@ export function AmapRoutePage() {
             正在请求高德路线
           </div>
         ) : null}
-        {routeRequest.transport_notice ? (
-          <p className="route-panel-alert">{routeRequest.transport_notice}</p>
+        {transportNotice ? (
+          <p className="route-panel-alert">{transportNotice}</p>
         ) : null}
         {error ? <p className="route-panel-alert error">{error}</p> : null}
         {routeRequest.pool?.meta.data_warning ? (

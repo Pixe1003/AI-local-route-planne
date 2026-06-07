@@ -40,6 +40,8 @@ class UgcFeedService:
                     post_id=f"ugc_{poi.id}",
                     poi_id=poi.id,
                     poi_name=poi.name,
+                    latitude=poi.latitude,
+                    longitude=poi.longitude,
                     title=self.TITLE_BY_CATEGORY.get(poi.category, "值得收藏的本地 POI"),
                     source=self.SOURCE_BY_INDEX[index % len(self.SOURCE_BY_INDEX)],
                     author=f"本地体验官{index + 1:02d}",
@@ -131,19 +133,28 @@ class UgcFeedService:
                 return
 
     def _review_to_card(self, review: UgcReview, index: int) -> UgcFeedItem:
+        poi = self._lookup_poi(review.poi_id)
         return UgcFeedItem(
             post_id=review.post_id,
             poi_id=review.poi_id,
             poi_name=review.poi_name,
+            latitude=poi.latitude if poi else None,
+            longitude=poi.longitude if poi else None,
             title=self.TITLE_BY_CATEGORY.get(review.category, "值得收藏的本地 POI"),
             source=review.source,
             author=review.author or f"本地体验官{index + 1:02d}",
-            cover_image=None,
+            cover_image=poi.cover_image if poi else None,
             quote=review.content,
             tags=review.tags[:6],
             category=review.category,
             rating=review.rating or review.poi_rating or 4.0,
             price_per_person=review.price_per_person,
-            estimated_queue_min=None,
+            estimated_queue_min=poi.queue_estimate.get("weekend_peak") if poi else None,
             city=review.city,
         )
+
+    def _lookup_poi(self, poi_id: str):
+        try:
+            return self.repo.get(poi_id)
+        except KeyError:
+            return None
