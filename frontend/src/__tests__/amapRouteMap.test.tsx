@@ -161,4 +161,55 @@ describe("AmapRouteMap", () => {
     ])
     expect(AMap.Polyline).not.toHaveBeenCalled()
   })
+
+  it("supports highlighted preview markers and marker click callbacks", async () => {
+    const fakeMap = {
+      add: vi.fn(),
+      destroy: vi.fn(),
+      setFitView: vi.fn()
+    }
+    const markerOptions: Array<{ content?: string }> = []
+    const markerClickHandlers: Array<() => void> = []
+    const markerOverlays = [
+      { setMap: vi.fn(), on: vi.fn((_eventName: "click", handler: () => void) => markerClickHandlers.push(handler)) },
+      { setMap: vi.fn(), on: vi.fn((_eventName: "click", handler: () => void) => markerClickHandlers.push(handler)) }
+    ]
+
+    const AMap = {
+      Map: vi.fn(function () {
+        return fakeMap
+      }),
+      Marker: vi.fn(function (options: { content?: string }) {
+        markerOptions.push(options)
+        return markerOverlays[markerOptions.length - 1]
+      }),
+      Polyline: vi.fn()
+    }
+    vi.stubGlobal("AMap", AMap)
+    loadAmap.mockResolvedValue(AMap)
+
+    const pois: RoutePoi[] = [
+      { id: "hf_poi_1", name: "合肥 POI 1", longitude: 117.22, latitude: 31.82 },
+      { id: "hf_poi_2", name: "合肥 POI 2", longitude: 117.23, latitude: 31.83 }
+    ]
+    const onMarkerClick = vi.fn()
+
+    render(
+      <AmapRouteMap
+        geojson={null}
+        highlightedPoiId="hf_poi_2"
+        onMarkerClick={onMarkerClick}
+        pois={pois}
+        showAllMarkers
+      />
+    )
+
+    await waitFor(() => {
+      expect(AMap.Marker).toHaveBeenCalledTimes(2)
+    })
+
+    expect(markerOptions[1].content).toContain("active")
+    markerClickHandlers[1]()
+    expect(onMarkerClick).toHaveBeenCalledWith("hf_poi_2")
+  })
 })

@@ -12,6 +12,8 @@ data/eval/
 data/models/
 data/raw/
 data/processed/*.sqlite
+data/processed/*.sqlite-shm
+data/processed/*.sqlite-wal
 data/processed/*.sqlite.bak*
 data/processed/*.jsonl
 *.log

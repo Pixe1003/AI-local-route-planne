@@ -5,6 +5,8 @@ class UgcFeedItem(BaseModel):
     post_id: str
     poi_id: str
     poi_name: str
+    latitude: float | None = None
+    longitude: float | None = None
     title: str
     source: str
     author: str

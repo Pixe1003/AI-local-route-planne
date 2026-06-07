@@ -10,7 +10,8 @@ const mocks = vi.hoisted(() => ({
   fetchPool: vi.fn(),
   fetchSystemHealth: vi.fn(),
   setNeedProfile: vi.fn(),
-  setRouteRequest: vi.fn()
+  setRouteRequest: vi.fn(),
+  mapPois: [] as unknown[][]
 }))
 
 vi.mock("react-router-dom", async () => {
@@ -37,9 +38,11 @@ vi.mock("../api/health", () => ({
 vi.mock("../store/preferenceStore", () => ({
   usePreferenceStore: () => ({
     likedPoiIds: [],
+    likedItems: {},
     isLiked: () => false,
     toggleLike: vi.fn(),
     syncSnapshot: mocks.syncSnapshot,
+    clearLikes: vi.fn(),
     loading: false
   })
 }))
@@ -65,6 +68,13 @@ vi.mock("../store/amapRouteStore", () => ({
   })
 }))
 
+vi.mock("../components/AmapRouteMap", () => ({
+  AmapRouteMap: (props: { pois: unknown[] }) => {
+    mocks.mapPois.push(props.pois)
+    return null
+  }
+}))
+
 import { DiscoveryFeedPage } from "../pages/DiscoveryFeedPage"
 
 function todayIso() {
@@ -75,6 +85,7 @@ function todayIso() {
 
 describe("DiscoveryFeedPage Amap route flow", () => {
   beforeEach(() => {
+    mocks.mapPois = []
     mocks.fetchUgcFeed.mockResolvedValue([])
     mocks.fetchSystemHealth.mockResolvedValue({
       status: "ok",
@@ -140,8 +151,9 @@ describe("DiscoveryFeedPage Amap route flow", () => {
 
     const { container } = render(<DiscoveryFeedPage />)
 
-    fireEvent.click(container.querySelector(".instant-cta .primary-button") as HTMLButtonElement)
-    fireEvent.submit(container.querySelector(".instant-panel") as HTMLFormElement)
+    expect(container.querySelector(".workbench-command-panel")).toBeInTheDocument()
+    expect(container.querySelector(".plan-basket-form")).toBeInTheDocument()
+    fireEvent.submit(container.querySelector(".plan-basket-form") as HTMLFormElement)
 
     await waitFor(() => {
       expect(mocks.runAgentRoute).toHaveBeenCalledWith(
@@ -173,12 +185,111 @@ describe("DiscoveryFeedPage Amap route flow", () => {
           source: "ugc_instant_route",
           session_id: "agent_session_1",
           pool: expect.objectContaining({ pool_id: "pool_1" }),
-          transport_notice: "地图路线暂不可用，以下为文字路线建议。",
+          transport_notice: null,
           weather_condition: "normal"
         })
       )
     })
     expect(mocks.navigate).toHaveBeenCalledWith("/route-map")
+  })
+
+  it("renders the service workbench discovery cockpit", async () => {
+    mocks.fetchUgcFeed.mockResolvedValue([
+      {
+        post_id: "ugc_1",
+        poi_id: "poi_1",
+        poi_name: "罍街",
+        title: "夜市很好逛",
+        source: "simulated_ugc",
+        author: "tester",
+        cover_image: null,
+        quote: "下班后适合边吃边逛。",
+        tags: ["food", "night"],
+        category: "restaurant",
+        rating: 4.6,
+        price_per_person: 70,
+        estimated_queue_min: 12,
+        city: "hefei"
+      }
+    ])
+
+    const { container } = render(<DiscoveryFeedPage />)
+
+    await waitFor(() => {
+      expect(container.querySelector(".service-workbench")).toBeInTheDocument()
+    })
+    expect(container.querySelector(".workbench-feed-panel")).toBeInTheDocument()
+    expect(container.querySelector(".workbench-command-panel")).toBeInTheDocument()
+    expect(container.querySelector(".workbench-map-panel")).toBeInTheDocument()
+    expect(container.querySelector(".workbench-insights-panel")).toBeInTheDocument()
+    expect(container.querySelector(".plan-basket-form")).toBeInTheDocument()
+    expect(container.querySelector(".route-intent-card")).toBeInTheDocument()
+    expect(container.querySelector(".poi-table")).toBeInTheDocument()
+    expect(container.querySelector(".route-preview-card")).toBeInTheDocument()
+    expect(container.querySelector(".discover-map-stage")).toBeInTheDocument()
+    expect(container.querySelector(".memory-sidebar")).toBeInTheDocument()
+    expect(container.querySelector(".plan-basket")).toBeInTheDocument()
+    expect(container.querySelector(".discover-search")).toBeInTheDocument()
+    expect(container.textContent).toContain("罍街")
+  })
+
+  it("uses backend UGC coordinates for the preview map markers", async () => {
+    mocks.fetchUgcFeed.mockResolvedValue([
+      {
+        post_id: "ugc_1",
+        poi_id: "hf_poi_real_1",
+        poi_name: "Real POI 1",
+        title: "Real coordinate card",
+        source: "simulated_ugc",
+        author: "tester",
+        cover_image: null,
+        quote: "real coordinate evidence",
+        tags: ["food"],
+        category: "restaurant",
+        rating: 4.6,
+        price_per_person: 70,
+        estimated_queue_min: 12,
+        city: "hefei",
+        latitude: 31.76123,
+        longitude: 117.34567
+      },
+      {
+        post_id: "ugc_2",
+        poi_id: "hf_poi_real_2",
+        poi_name: "Real POI 2",
+        title: "Second real coordinate card",
+        source: "simulated_ugc",
+        author: "tester",
+        cover_image: null,
+        quote: "second real coordinate evidence",
+        tags: ["culture"],
+        category: "culture",
+        rating: 4.7,
+        price_per_person: null,
+        estimated_queue_min: 8,
+        city: "hefei",
+        latitude: 31.81234,
+        longitude: 117.45678
+      }
+    ])
+
+    render(<DiscoveryFeedPage />)
+
+    await waitFor(() => {
+      expect(mocks.mapPois.length).toBeGreaterThan(0)
+    })
+    expect(mocks.mapPois.at(-1)).toEqual([
+      expect.objectContaining({
+        id: "hf_poi_real_1",
+        latitude: 31.76123,
+        longitude: 117.34567
+      }),
+      expect.objectContaining({
+        id: "hf_poi_real_2",
+        latitude: 31.81234,
+        longitude: 117.45678
+      })
+    ])
   })
 
   it("does not render an empty image src when UGC cover image is missing", async () => {
@@ -207,5 +318,78 @@ describe("DiscoveryFeedPage Amap route flow", () => {
       expect(container.querySelector(".ugc-card")).not.toBeNull()
     })
     expect(container.querySelector("img.ugc-cover")).toBeNull()
+  })
+
+  it("uses friendly demo content when UGC feed loading fails", async () => {
+    mocks.fetchUgcFeed.mockRejectedValue(new Error("Request failed with status code 502"))
+
+    const { container } = render(<DiscoveryFeedPage />)
+
+    await waitFor(() => {
+      expect(container.textContent).toContain("后端 UGC 暂不可用")
+    })
+    expect(container.querySelectorAll(".ugc-card").length).toBeGreaterThan(0)
+    expect(container.textContent).not.toContain("Request failed with status code 502")
+  })
+
+  it("renders one UGC card per POI when the feed contains multiple posts for the same place", async () => {
+    mocks.fetchUgcFeed.mockResolvedValue([
+      {
+        post_id: "ugc_1",
+        poi_id: "poi_1",
+        poi_name: "Same POI",
+        title: "First story",
+        source: "simulated_ugc",
+        author: "tester-a",
+        cover_image: null,
+        quote: "first version",
+        tags: ["restaurant"],
+        category: "restaurant",
+        rating: 4.5,
+        price_per_person: 30,
+        estimated_queue_min: null,
+        city: "hefei"
+      },
+      {
+        post_id: "ugc_2",
+        poi_id: "poi_1",
+        poi_name: "Same POI",
+        title: "Second story",
+        source: "simulated_ugc",
+        author: "tester-b",
+        cover_image: null,
+        quote: "duplicate version",
+        tags: ["restaurant"],
+        category: "restaurant",
+        rating: 4.7,
+        price_per_person: 30,
+        estimated_queue_min: null,
+        city: "hefei"
+      },
+      {
+        post_id: "ugc_3",
+        poi_id: "poi_2",
+        poi_name: "Other POI",
+        title: "Other story",
+        source: "simulated_ugc",
+        author: "tester-c",
+        cover_image: null,
+        quote: "another place",
+        tags: ["cafe"],
+        category: "cafe",
+        rating: 4.6,
+        price_per_person: 40,
+        estimated_queue_min: null,
+        city: "hefei"
+      }
+    ])
+
+    const { container } = render(<DiscoveryFeedPage />)
+
+    await waitFor(() => {
+      expect(container.querySelectorAll(".ugc-card")).toHaveLength(2)
+    })
+    expect(container.textContent).toContain("first version")
+    expect(container.textContent).not.toContain("duplicate version")
   })
 })

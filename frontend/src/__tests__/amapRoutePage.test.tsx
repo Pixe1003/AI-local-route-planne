@@ -132,12 +132,14 @@ describe("AmapRoutePage", () => {
       route_chain: routeResult
     })
 
-    render(
+    const { container } = render(
       <MemoryRouter>
         <AmapRoutePage />
       </MemoryRouter>
     )
 
+    expect(container.querySelector(".route-service-shell")).toBeInTheDocument()
+    expect(container.querySelector(".route-service-summary")).toBeInTheDocument()
     expect(await screen.findByText("1.5 km")).toBeInTheDocument()
     expect(screen.getAllByText("10 分钟").length).toBeGreaterThanOrEqual(1)
     expect(screen.queryByText("Network Error")).not.toBeInTheDocument()
@@ -168,6 +170,30 @@ describe("AmapRoutePage", () => {
     expect(screen.getAllByText("1.5 km").length).toBeGreaterThanOrEqual(1)
     expect(screen.getAllByText("10 分钟").length).toBeGreaterThanOrEqual(1)
     expect(screen.getByText(/高德 JS Key 未配置/)).toBeInTheDocument()
+  })
+
+  it("still calls route-chain when a stored transport notice exists", async () => {
+    useAmapRouteStore.getState().setRouteRequest({
+      mode: "driving",
+      poi_ids: ["sh_poi_001", "sh_poi_002"],
+      source: "ugc_instant_route",
+      free_text: "route with previous notice",
+      transport_notice: "previous backend route notice"
+    })
+
+    render(
+      <MemoryRouter>
+        <AmapRoutePage />
+      </MemoryRouter>
+    )
+
+    await waitFor(() => {
+      expect(createRouteChain).toHaveBeenCalledWith({
+        mode: "driving",
+        poi_ids: ["sh_poi_001", "sh_poi_002"]
+      })
+    })
+    expect(await screen.findByText("1.5 km")).toBeInTheDocument()
   })
 
   it("keeps a text route available when the route-chain request fails", async () => {

@@ -12,12 +12,22 @@ import type { GeoJSONFeatureCollection, RouteMode, RoutePoi } from "../types/rou
 interface AmapRouteMapProps {
   pois: RoutePoi[]
   geojson: GeoJSONFeatureCollection | null
+  highlightedPoiId?: string | null
   mode?: RouteMode
+  onMarkerClick?: (poiId: string) => void
+  showAllMarkers?: boolean
 }
 
 const HEFEI_CENTER: [number, number] = [117.2272, 31.8206]
 
-export function AmapRouteMap({ pois, geojson, mode = "driving" }: AmapRouteMapProps) {
+export function AmapRouteMap({
+  pois,
+  geojson,
+  highlightedPoiId = null,
+  mode = "driving",
+  onMarkerClick,
+  showAllMarkers = false
+}: AmapRouteMapProps) {
   const containerRef = useRef<HTMLDivElement | null>(null)
   const mapRef = useRef<AMapMapInstance | null>(null)
   const overlaysRef = useRef<AMapOverlayInstance[]>([])
@@ -88,29 +98,32 @@ export function AmapRouteMap({ pois, geojson, mode = "driving" }: AmapRouteMapPr
     const map = mapRef.current
     const AMap = amapRef.current
     pois.forEach((poi, index) => {
-      overlays.push(
-        new AMap.Marker({
-          map,
-          position: [poi.longitude, poi.latitude],
-          title: poi.name,
-          content: `<div class="amap-route-marker" title="${escapeHtml(poi.name)}">${index + 1}</div>`,
-          zIndex: 120 + index
-        })
-      )
+      const activeClass = highlightedPoiId === poi.id ? " active" : ""
+      const marker = new AMap.Marker({
+        map,
+        position: [poi.longitude, poi.latitude],
+        title: poi.name,
+        content: `<div class="amap-route-marker${activeClass}" title="${escapeHtml(poi.name)}">${index + 1}</div>`,
+        zIndex: 120 + index
+      })
+      if (onMarkerClick) {
+        marker.on("click", () => onMarkerClick(poi.id))
+      }
+      overlays.push(marker)
     })
-    if (pois.length >= 2 && renderJsapiRouteSegments({ AMap, map, mode, pois, overlays, planners })) {
-      plannersRef.current = planners
-    } else {
+    if (!showAllMarkers && pois.length >= 2 && renderJsapiRouteSegments({ AMap, map, mode, pois, overlays, planners })) {
+      // JSAPI planner owns the route overlays.
+    } else if (!showAllMarkers) {
       routePaths(geojson, pois).forEach(path => {
         overlays.push(routePolyline(AMap, map, path))
       })
-      plannersRef.current = []
     }
     overlaysRef.current = overlays
+    plannersRef.current = planners
     if (overlays.length) {
       map.setFitView(overlays)
     }
-  }, [geojson, mode, pois, status])
+  }, [geojson, highlightedPoiId, mode, onMarkerClick, pois, showAllMarkers, status])
 
   if (!jsKey || !securityJsCode) {
     return (
@@ -197,7 +210,7 @@ function routePolyline(AMap: AMapNamespace, map: AMapMapInstance, path: [number,
   return new AMap.Polyline({
     map,
     path,
-    strokeColor: "#0b6bff",
+    strokeColor: "#f3b700",
     strokeOpacity: 0.95,
     strokeWeight: 8,
     lineJoin: "round",

@@ -2,6 +2,8 @@ export interface UgcFeedItem {
   post_id: string
   poi_id: string
   poi_name: string
+  latitude?: number | null
+  longitude?: number | null
   title: string
   source: string
   author: string
